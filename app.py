@@ -322,4 +322,4 @@ def get_fragrance(frag_id):
 if __name__ == "__main__":
     _GLOBALS.update(_compute_globals())
     print(f"Globals: mean_rating={_GLOBALS['mean_rating']}, median_votes={_GLOBALS['median_votes']}, total={_GLOBALS['total_count']}")
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, host='0.0.0.0')
