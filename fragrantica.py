@@ -587,11 +587,12 @@ class FragranticaParser:
 
 class FragranticaScraper:
 
-    def __init__(self, db=None, delay=(5.0, 9.0), retry_wait=60, max_retries=3):
+    def __init__(self, db=None, delay=(5.0, 9.0), retry_wait=60, max_retries=3, restart_every=50):
         self.db = db
         self.delay = delay
         self.retry_wait = retry_wait
         self.max_retries = max_retries
+        self.restart_every = restart_every
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
             headless=False,
@@ -676,6 +677,17 @@ class FragranticaScraper:
                     self._cycle_vpn()
         return None
 
+    def _restart_browser(self):
+        print("Restarting browser to free memory...")
+        try:
+            self._browser.close()
+        except Exception:
+            pass
+        self._browser = self._pw.chromium.launch(
+            headless=False,
+            args=['--disable-features=Translate'],
+        )
+
     def close(self):
         self._browser.close()
         self._pw.stop()
@@ -707,6 +719,7 @@ class FragranticaScraper:
                     progress: bool = True) -> list[dict]:
         results = []
         total = len(urls)
+        scraped_count = 0
         for i, url in enumerate(urls, 1):
             if skip_existing and self.db and self.db.is_scraped(url):
                 if progress:
@@ -716,11 +729,14 @@ class FragranticaScraper:
             data = self.scrape_and_save(url)
             if data:
                 results.append(data)
+                scraped_count += 1
                 if progress:
                     name = data.get('name', '?')
                     rating = data.get('rating')
                     votes = data.get('votes')
                     print(f"[{i}/{total}] {name} — {rating} ({votes} votes)")
+                if self.restart_every and scraped_count % self.restart_every == 0:
+                    self._restart_browser()
             else:
                 if progress:
                     print(f"[{i}/{total}] FAILED  {url}")
