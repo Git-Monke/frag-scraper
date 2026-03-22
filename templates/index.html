@@ -316,8 +316,8 @@ hr.divider {
 .cell-name { font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .cell-brand { color: var(--text-dim); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .thumb-cell { display: flex; align-items: center; gap: 8px; }
-.thumb-sm { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--bg3); }
-.detail-bottle { width: 120px; float: right; margin: 0 0 12px 12px; border-radius: 6px; object-fit: contain; background: var(--bg3); }
+.thumb-sm { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: transparent; }
+.detail-bottle { width: 120px; float: right; margin: 0 0 12px 12px; border-radius: 6px; object-fit: contain; background: transparent; }
 .cell-rating { color: var(--amber); font-weight: 600; }
 .cell-bayesian { color: #7cb8d4; font-weight: 600; }
 .cell-liked { color: var(--like); font-weight: 600; }
@@ -508,9 +508,9 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
 }
 .frag-card:hover { border-color: var(--amber); }
 .frag-card.selected { border-color: var(--amber); background: #1e1a0e; }
-.frag-card-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; background: var(--bg3); }
+.frag-card-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; background: transparent; }
 .frag-card-img-ph {
-  width: 100%; aspect-ratio: 3/4; background: var(--bg3);
+  width: 100%; aspect-ratio: 3/4; background: transparent;
   display: flex; align-items: center; justify-content: center;
   font-size: 32px; color: var(--text-muted);
 }
@@ -999,7 +999,7 @@ function renderGridView(results, gridWrap, tbl) {
     ${results.map(r => `
       <div class="frag-card${r.id === state.selectedId ? ' selected' : ''}" data-id="${r.id}">
         ${r.image_url
-          ? `<img class="frag-card-img" src="${esc(r.image_url)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          ? `<img class="frag-card-img" src="${esc(avif(r.image_url))}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
           : ''}
         <div class="frag-card-img-ph" style="display:${r.image_url ? 'none' : 'flex'}">🧴</div>
         <div class="frag-card-info">
@@ -1028,6 +1028,10 @@ function sortArrow(col) {
 function esc(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function avif(url) {
+  if (!url) return url;
+  return url.replace(/([^/]+)\.jpg$/i, 'dark-$1.avif');
 }
 
 // ---- Pagination ----
@@ -1081,7 +1085,7 @@ async function showDetail(id) {
   content.classList.add('visible');
 
   content.innerHTML = `
-    ${f.image_url ? `<img class="detail-bottle" src="${esc(f.image_url)}" alt="${esc(f.name || '')}" onerror="this.style.display='none'">` : ''}
+    ${f.image_url ? `<img class="detail-bottle" src="${esc(avif(f.image_url))}" alt="${esc(f.name || '')}" onerror="this.style.display='none'">` : ''}
     <div class="detail-name">${esc(f.name || '—')}</div>
     <div class="detail-sub">${esc(f.brand || '')}${f.brand && f.year ? ' · ' : ''}${f.year || ''}</div>
 
