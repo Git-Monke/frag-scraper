@@ -628,60 +628,45 @@ class FragranticaScraper:
                         page.close()
                         self._cycle_vpn()
                         continue
-                    # Wait for Vue vote components to hydrate
-                    try:
-                        page.wait_for_selector('.tw-rating-card .tw-rating-card-label',
-                                               timeout=10000)
-                    except Exception:
-                        pass  # parse whatever rendered
-                    def _scroll_to(target):
-                        page.evaluate(f"""
-                            () => new Promise(resolve => {{
-                                const target = {target};
-                                const steps = 10;
-                                const step = target / steps;
-                                let pos = window.scrollY;
-                                const tick = setInterval(() => {{
-                                    pos += step;
-                                    window.scrollTo(0, pos);
-                                    if (pos >= target) {{
-                                        clearInterval(tick);
-                                        resolve();
-                                    }}
-                                }}, 200);
-                            }})
+                    # Scroll 250px at 10Hz until the demographics section (the deepest lazy
+                    # section we need) enters the viewport — this triggers its IntersectionObserver.
+                    for _ in range(100):
+                        page.evaluate("window.scrollBy(0, 500)")
+                        time.sleep(0.1)
+                        reached = page.evaluate("""
+                            () => {
+                                const el = document.getElementById('demographics');
+                                if (!el) return false;
+                                const rect = el.getBoundingClientRect();
+                                return rect.top < window.innerHeight + 500;
+                            }
                         """)
+                        if reached:
+                            break
 
-                    # Scroll 1: reach notes pyramid at ~3100px, then poll for notes
-                    _scroll_to(3100)
-                    _NOTE_KEYS = ('top_notes_json', 'middle_notes_json', 'base_notes_json')
+                    # Now poll for Vue API calls to finish loading the data
+                    _SENTINELS = [
+                        'top_notes_json',
+                        'longevity_very_weak', 'sillage_intimate',
+                        'price_ok', 'gender_male',
+                        'rating_love', 'season_spring', 'time_day',
+                    ]
                     data = None
-                    for poll in range(10):
+                    for poll in range(15):
+                        time.sleep(1)
                         html = page.content()
                         soup = BeautifulSoup(html, 'html.parser')
                         data = FragranticaParser.parse(soup, url)
                         notes_data = FragranticaParser._parse_notes(soup)
-                        if any(notes_data.get(k) for k in _NOTE_KEYS) or soup.find(id='pyramid'):
-                            data.update(notes_data)
-                            break
-                        time.sleep(1)
-                        _scroll_to(3100 + (poll + 1) * 200)
-
-                    # Scroll 2: reach vote sections at ~5100px, then poll for sentinels
-                    _scroll_to(5500)
-                    _SENTINELS = [
-                        'longevity_very_weak', 'sillage_intimate', 'price_ok',
-                        'gender_male', 'rating_love', 'season_spring', 'time_day',
-                    ]
-                    for poll in range(10):
-                        html = page.content()
-                        soup = BeautifulSoup(html, 'html.parser')
-                        fresh = FragranticaParser.parse(soup, url)
-                        data.update(fresh)
+                        data.update(notes_data)
                         if all(data.get(f) is not None for f in _SENTINELS):
                             break
-                        time.sleep(1)
-                        _scroll_to(5500 + (poll + 1) * 200)
+                    if data is None:
+                        html = page.content()
+                        soup = BeautifulSoup(html, 'html.parser')
+                        data = FragranticaParser.parse(soup, url)
+                        notes_data = FragranticaParser._parse_notes(soup)
+                        data.update(notes_data)
                 finally:
                     page.close()
                 return data
