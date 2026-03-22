@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fragrantica Explorer</title>
+<style>
+:root {
+  --bg: #0f0f0f;
+  --bg2: #1a1a1a;
+  --bg3: #242424;
+  --border: #333;
+  --amber: #d4a84b;
+  --amber-dim: #9a7535;
+  --text: #e8e8e8;
+  --text-dim: #888;
+  --text-muted: #555;
+  --love: #e05c5c;
+  --like: #5cb85c;
+  --ok: #5b8ac7;
+  --dislike: #c87c3c;
+  --hate: #9e4444;
+  --sidebar-w: 270px;
+  --detail-w: 340px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 48px 1fr;
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+}
+header h1 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--amber);
+  letter-spacing: 0.03em;
+}
+#stats-bar {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* ---- Main layout ---- */
+main {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr var(--detail-w);
+  overflow: hidden;
+}
+
+/* ---- Sidebar ---- */
+#sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-section {
+  margin-bottom: 4px;
+}
+.filter-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  padding: 8px 4px 4px;
+}
+.filter-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.filter-row label {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 36px;
+}
+
+input[type=text], input[type=number], select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  width: 100%;
+}
+input[type=text]:focus, input[type=number]:focus, select:focus {
+  outline: none;
+  border-color: var(--amber-dim);
+}
+select option { background: var(--bg3); }
+
+.range-pair {
+  display: flex;
+  gap: 4px;
+}
+.range-pair input { flex: 1; }
+
+hr.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+/* Condition builder */
+#conditions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.condition-row {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.condition-top {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.condition-top select { flex: 0 0 100px; }
+.condition-top input { flex: 1; }
+.condition-top button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+.condition-top button:hover { color: var(--love); }
+.condition-bottom {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.condition-bottom label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.condition-bottom input {
+  width: 52px;
+}
+
+#btn-add-condition {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  width: 100%;
+  padding: 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#btn-add-condition:hover { border-color: var(--amber-dim); color: var(--amber); }
+
+#btn-reset {
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 100%;
+  padding: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#btn-reset:hover { border-color: var(--amber-dim); color: var(--amber); }
+
+/* ---- Center area ---- */
+#center {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#toolbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#search-input {
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
+  padding: 5px 10px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.toolbar-group label { color: var(--text-dim); white-space: nowrap; }
+.toolbar-group select { width: auto; }
+
+#col-toggle-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  position: relative;
+}
+#col-toggle-btn:hover { border-color: var(--amber-dim); }
+
+#col-toggle-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  z-index: 100;
+  min-width: 160px;
+  gap: 4px;
+  flex-direction: column;
+}
+#col-toggle-menu.open { display: flex; }
+#col-toggle-menu label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: var(--text);
+}
+#col-toggle-menu label:hover { background: var(--bg3); }
+
+.col-toggle-wrap { position: relative; }
+
+/* ---- Table ---- */
+#table-wrap {
+  flex: 1;
+  overflow-y: auto;
+}
+
+#results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+#results-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg2);
+  border-bottom: 2px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+#results-table th:hover { color: var(--amber); }
+#results-table th.sorted { color: var(--amber); }
+#results-table th .sort-arrow { margin-left: 3px; }
+
+#results-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+#results-table tr { cursor: pointer; transition: background 0.1s; }
+#results-table tr:hover td { background: var(--bg2); }
+#results-table tr.selected td { background: #1e1a0e; }
+
+.cell-name { font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.cell-brand { color: var(--text-dim); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.cell-rating { color: var(--amber); font-weight: 600; }
+.cell-bayesian { color: #7cb8d4; font-weight: 600; }
+.cell-liked { color: var(--like); font-weight: 600; }
+
+.empty-state, .error-state {
+  padding: 60px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ---- Pagination ---- */
+#pagination {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+#pagination button {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+#pagination button:hover:not(:disabled) { border-color: var(--amber-dim); color: var(--amber); }
+#pagination button:disabled { opacity: 0.35; cursor: default; }
+#page-info { flex: 1; text-align: center; }
+.page-size-group { display: flex; gap: 4px; align-items: center; margin-left: auto; }
+.page-size-group label { color: var(--text-muted); }
+
+/* ---- Detail Panel ---- */
+#detail {
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+#detail-placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  flex-direction: column;
+  gap: 8px;
+}
+#detail-placeholder .hint { font-size: 11px; color: var(--border); }
+
+#detail-content { display: none; }
+#detail-content.visible { display: block; }
+
+.detail-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+  line-height: 1.3;
+}
+.detail-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.detail-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.detail-stat { display: flex; flex-direction: column; gap: 1px; }
+.detail-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; }
+.detail-stat-val { font-size: 15px; font-weight: 700; }
+.stat-rating { color: var(--amber); }
+.stat-bayesian { color: #7cb8d4; }
+.stat-liked { color: var(--like); }
+.stat-votes { color: var(--text-dim); font-size: 13px !important; }
+
+.detail-link {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--amber-dim);
+  text-decoration: none;
+  margin-bottom: 14px;
+  border-bottom: 1px solid transparent;
+}
+.detail-link:hover { color: var(--amber); border-color: var(--amber); }
+
+.detail-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin: 12px 0 6px;
+}
+hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+/* Bar charts */
+.bar-chart { display: flex; flex-direction: column; gap: 4px; }
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.bar-label { min-width: 84px; color: var(--text-dim); text-align: right; }
+.bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--bg3);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--amber-dim);
+  transition: width 0.3s;
+}
+.bar-fill.love { background: var(--love); }
+.bar-fill.like { background: var(--like); }
+.bar-fill.ok { background: var(--ok); }
+.bar-fill.dislike { background: var(--dislike); }
+.bar-fill.hate { background: var(--hate); }
+.bar-fill.accord { background: #6a5acd; }
+.bar-pct { min-width: 30px; color: var(--text-muted); font-size: 10px; }
+
+/* Notes pyramid */
+.note-layer { margin-bottom: 6px; }
+.note-layer-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 3px; }
+.note-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.note-pill {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Loading spinner */
+#loading {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  z-index: 1000;
+}
+@keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Fragrantica Explorer</h1>
+  <span id="stats-bar">Loading...</span>
+</header>
+
+<main>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="filter-section">
+      <div class="filter-title">Search</div>
+      <input type="text" id="f-q" placeholder="Name or brand…">
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Brand</div>
+      <select id="f-brand">
+        <option value="">All brands</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Year</div>
+      <div class="range-pair">
+        <input type="number" id="f-year-min" placeholder="From" min="1900" max="2030">
+        <input type="number" id="f-year-max" placeholder="To" min="1900" max="2030">
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Rating (0–5)</div>
+      <div class="range-pair">
+        <input type="number" id="f-rating-min" placeholder="Min" min="0" max="5" step="0.1">
+        <input type="number" id="f-rating-max" placeholder="Max" min="0" max="5" step="0.1">
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Min Votes</div>
+      <input type="number" id="f-votes-min" placeholder="e.g. 100" min="0">
+    </div>
+
+    <hr class="divider">
+
+    <div class="filter-section">
+      <div class="filter-title">Longevity</div>
+      <select id="f-longevity">
+        <option value="">Any</option>
+        <option value="very_weak">Very Weak</option>
+        <option value="weak">Weak</option>
+        <option value="moderate">Moderate</option>
+        <option value="long_lasting">Long Lasting</option>
+        <option value="eternal">Eternal</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Sillage</div>
+      <select id="f-sillage">
+        <option value="">Any</option>
+        <option value="intimate">Intimate</option>
+        <option value="moderate">Moderate</option>
+        <option value="strong">Strong</option>
+        <option value="enormous">Enormous</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Season</div>
+      <select id="f-season">
+        <option value="">Any</option>
+        <option value="spring">Spring</option>
+        <option value="summer">Summer</option>
+        <option value="fall">Fall</option>
+        <option value="winter">Winter</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <div class="filter-title">Gender</div>
+      <select id="f-gender">
+        <option value="">Any</option>
+        <option value="female">Feminine</option>
+        <option value="more_female">More Feminine</option>
+        <option value="unisex">Unisex</option>
+        <option value="more_male">More Masculine</option>
+        <option value="male">Masculine</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+
+    <div class="filter-section">
+      <div class="filter-title">Note &amp; Accord Conditions</div>
+      <div id="conditions-list"></div>
+      <button id="btn-add-condition">+ Add Condition</button>
+    </div>
+
+    <button id="btn-reset">Reset All Filters</button>
+  </div>
+
+  <!-- Center -->
+  <div id="center">
+    <div id="toolbar">
+      <input type="text" id="search-input" placeholder="Quick search name / brand…">
+
+      <div class="toolbar-group">
+        <label>Sort</label>
+        <select id="f-sort">
+          <option value="bayesian">Bayesian Score</option>
+          <option value="rating">Highest Rated</option>
+          <option value="votes">Most Popular</option>
+          <option value="liked">Most Liked</option>
+          <option value="loved">Most Loved</option>
+          <option value="friendly">Most Friendly</option>
+          <option value="controversial">Controversial</option>
+          <option value="year">Year</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+
+      <div class="toolbar-group">
+        <label>Order</label>
+        <select id="f-order">
+          <option value="desc">Desc</option>
+          <option value="asc">Asc</option>
+        </select>
+      </div>
+
+      <div class="col-toggle-wrap">
+        <button id="col-toggle-btn">Columns ▾</button>
+        <div id="col-toggle-menu">
+          <label><input type="checkbox" data-col="longevity"> Longevity</label>
+          <label><input type="checkbox" data-col="sillage"> Sillage</label>
+          <label><input type="checkbox" data-col="season"> Season</label>
+          <label><input type="checkbox" data-col="gender"> Gender</label>
+          <label><input type="checkbox" data-col="liked_score"> Liked Score</label>
+          <label><input type="checkbox" data-col="loved_score"> Loved %</label>
+          <label><input type="checkbox" data-col="friendly_score"> Friendly</label>
+          <label><input type="checkbox" data-col="controversial_score"> Controversial</label>
+        </div>
+      </div>
+    </div>
+
+    <div id="table-wrap">
+      <div id="empty-state" class="empty-state" style="display:none">No fragrances match your filters.</div>
+      <div id="error-state" class="error-state" style="display:none">Error fetching results.</div>
+      <table id="results-table" style="display:none">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+
+    <div id="pagination">
+      <button id="btn-first">«</button>
+      <button id="btn-prev">‹</button>
+      <span id="page-info"></span>
+      <button id="btn-next">›</button>
+      <button id="btn-last">»</button>
+      <div class="page-size-group">
+        <label>Per page</label>
+        <select id="f-page-size">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail Panel -->
+  <div id="detail">
+    <div id="detail-placeholder">
+      <span>Select a fragrance</span>
+      <span class="hint">Click any row to view details</span>
+    </div>
+    <div id="detail-content"></div>
+  </div>
+</main>
+
+<div id="loading"></div>
+
+<script>
+// ---- State ----
+const state = {
+  q: '', brand: '', yearMin: '', yearMax: '',
+  ratingMin: '', ratingMax: '', votesMin: '',
+  longevity: '', sillage: '', season: '', gender: '',
+  conditions: [],
+  sort: 'bayesian', order: 'desc',
+  page: 1, pageSize: 25,
+  extraCols: new Set(),
+  globals: null,
+  selectedId: null,
+};
+
+let debounceTimer = null;
+function debounce(fn, ms = 300) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(fn, ms);
+}
+
+// ---- Helpers ----
+function fmt(n) {
+  if (n == null) return '—';
+  return Number(n).toLocaleString();
+}
+function fmtRating(n) {
+  if (n == null) return '—';
+  return Number(n).toFixed(2);
+}
+function fmtBayes(n) {
+  if (n == null) return '—';
+  return Number(n).toFixed(4);
+}
+function fmtPct(n) {
+  if (n == null) return '—';
+  return (Number(n) * 100).toFixed(1) + '%';
+}
+function pctOf(val, ...group) {
+  const total = group.reduce((s, v) => s + (v || 0), 0);
+  if (!total) return 0;
+  return Math.round((val || 0) / total * 100);
+}
+
+const DOMINANT_LABELS = {
+  longevity: {
+    keys: ['longevity_very_weak','longevity_weak','longevity_moderate','longevity_long_lasting','longevity_eternal'],
+    labels: ['Very Weak','Weak','Moderate','Long Lasting','Eternal'],
+  },
+  sillage: {
+    keys: ['sillage_intimate','sillage_moderate','sillage_strong','sillage_enormous'],
+    labels: ['Intimate','Moderate','Strong','Enormous'],
+  },
+  season: {
+    keys: ['season_spring','season_summer','season_fall','season_winter'],
+    labels: ['Spring','Summer','Fall','Winter'],
+  },
+  gender: {
+    keys: ['gender_female','gender_more_female','gender_unisex','gender_more_male','gender_male'],
+    labels: ['Feminine','More Fem.','Unisex','More Masc.','Masculine'],
+  },
+};
+
+function dominant(row, group) {
+  const { keys, labels } = DOMINANT_LABELS[group];
+  let maxVal = 0, maxIdx = -1, total = 0;
+  keys.forEach((k, i) => {
+    const v = row[k] || 0;
+    total += v;
+    if (v > maxVal) { maxVal = v; maxIdx = i; }
+  });
+  if (maxIdx < 0 || total === 0) return '—';
+  return `${labels[maxIdx]} ${pctOf(maxVal, ...keys.map(k => row[k]))}%`;
+}
+
+// ---- Condition Builder ----
+function buildConditionRow(cond = {}) {
+  const id = `cond-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const row = document.createElement('div');
+  row.className = 'condition-row';
+  row.dataset.id = id;
+  row.innerHTML = `
+    <div class="condition-top">
+      <select class="c-type">
+        <option value="accord">Accord</option>
+        <option value="top">Top Note</option>
+        <option value="mid">Mid Note</option>
+        <option value="base">Base Note</option>
+        <option value="any_note">Any Note</option>
+      </select>
+      <input type="text" class="c-name" placeholder="e.g. vetiver" value="${cond.name || ''}">
+      <button class="c-remove" title="Remove">×</button>
+    </div>
+    <div class="condition-bottom">
+      <label>Min%</label>
+      <input type="number" class="c-min" placeholder="0" min="0" max="100" value="${cond.min_pct ?? ''}">
+      <label>Max%</label>
+      <input type="number" class="c-max" placeholder="100" min="0" max="100" value="${cond.max_pct ?? ''}">
+    </div>`;
+  if (cond.type) row.querySelector('.c-type').value = cond.type;
+
+  row.querySelector('.c-remove').addEventListener('click', () => {
+    row.remove();
+    triggerSearch();
+  });
+  row.querySelectorAll('select, input').forEach(el => {
+    el.addEventListener('change', triggerSearch);
+    el.addEventListener('input', () => debounce(triggerSearch));
+  });
+  return row;
+}
+
+function getConditions() {
+  return Array.from(document.querySelectorAll('.condition-row')).map(row => {
+    const type = row.querySelector('.c-type').value;
+    const name = row.querySelector('.c-name').value.trim();
+    const minVal = row.querySelector('.c-min').value.trim();
+    const maxVal = row.querySelector('.c-max').value.trim();
+    if (!name) return null;
+    const cond = { type, name };
+    if (minVal !== '') cond.min_pct = parseFloat(minVal);
+    if (maxVal !== '') cond.max_pct = parseFloat(maxVal);
+    return cond;
+  }).filter(Boolean);
+}
+
+document.getElementById('btn-add-condition').addEventListener('click', () => {
+  document.getElementById('conditions-list').appendChild(buildConditionRow());
+});
+
+// ---- Fetch ----
+function buildParams() {
+  const p = new URLSearchParams();
+  if (state.q) p.set('q', state.q);
+  if (state.brand) p.set('brand', state.brand);
+  if (state.yearMin) p.set('year_min', state.yearMin);
+  if (state.yearMax) p.set('year_max', state.yearMax);
+  if (state.ratingMin) p.set('rating_min', state.ratingMin);
+  if (state.ratingMax) p.set('rating_max', state.ratingMax);
+  if (state.votesMin) p.set('votes_min', state.votesMin);
+  if (state.longevity) p.set('longevity', state.longevity);
+  if (state.sillage) p.set('sillage', state.sillage);
+  if (state.season) p.set('season', state.season);
+  if (state.gender) p.set('gender', state.gender);
+  const conds = getConditions();
+  if (conds.length) p.set('conditions', JSON.stringify(conds));
+  p.set('sort', state.sort);
+  p.set('order', state.order);
+  p.set('page', state.page);
+  p.set('page_size', state.pageSize);
+  return p;
+}
+
+async function fetchResults() {
+  document.getElementById('loading').style.display = 'block';
+  try {
+    const res = await fetch('/api/search?' + buildParams());
+    const data = await res.json();
+    renderTable(data);
+  } catch (e) {
+    document.getElementById('error-state').style.display = 'block';
+    document.getElementById('results-table').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'none';
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+function triggerSearch(resetPage = true) {
+  if (resetPage) state.page = 1;
+  fetchResults();
+}
+
+// ---- Table rendering ----
+const EXTRA_COLS = [
+  { key: 'longevity', label: 'Longevity', render: r => dominant(r, 'longevity') },
+  { key: 'sillage', label: 'Sillage', render: r => dominant(r, 'sillage') },
+  { key: 'season', label: 'Season', render: r => dominant(r, 'season') },
+  { key: 'gender', label: 'Gender', render: r => dominant(r, 'gender') },
+  { key: 'liked_score',         label: 'Liked',         render: r => r.liked_score != null         ? `<span class="cell-liked">${fmtPct(r.liked_score)}</span>`                          : '—' },
+  { key: 'loved_score',         label: 'Loved',         render: r => r.loved_score != null         ? `<span class="cell-liked">${fmtPct(r.loved_score)}</span>`                          : '—' },
+  { key: 'friendly_score',      label: 'Friendly',      render: r => r.friendly_score != null      ? `<span class="cell-bayesian">${fmtPct(r.friendly_score)}</span>`                    : '—' },
+  { key: 'controversial_score', label: 'Controversial', render: r => r.controversial_score != null ? `<span style="color:#c87c3c">${fmtPct(r.controversial_score)}</span>`               : '—' },
+];
+
+function renderTable(data) {
+  const { results, total, page, page_size, pages } = data;
+  const empty = document.getElementById('empty-state');
+  const err = document.getElementById('error-state');
+  const tbl = document.getElementById('results-table');
+
+  err.style.display = 'none';
+  if (!results.length) {
+    empty.style.display = 'block';
+    tbl.style.display = 'none';
+    updatePagination(0, 1, 1, 1);
+    return;
+  }
+  empty.style.display = 'none';
+  tbl.style.display = 'table';
+
+  // Header
+  const sortCol = state.sort;
+  const extraVisible = EXTRA_COLS.filter(c => state.extraCols.has(c.key));
+
+  document.getElementById('table-head').innerHTML = `<tr>
+    <th data-sort="name" class="${sortCol==='name'?'sorted':''}">Name <span class="sort-arrow">${sortArrow('name')}</span></th>
+    <th data-sort="rating" class="${sortCol==='rating'?'sorted':''}">Rating <span class="sort-arrow">${sortArrow('rating')}</span></th>
+    <th data-sort="votes" class="${sortCol==='votes'?'sorted':''}">Votes <span class="sort-arrow">${sortArrow('votes')}</span></th>
+    <th data-sort="bayesian" class="${sortCol==='bayesian'?'sorted':''}">Bayesian <span class="sort-arrow">${sortArrow('bayesian')}</span></th>
+    <th data-sort="year" class="${sortCol==='year'?'sorted':''}">Year <span class="sort-arrow">${sortArrow('year')}</span></th>
+    ${extraVisible.map(c => `<th data-sort="${c.key}" class="${sortCol===c.key?'sorted':''}">${c.label} <span class="sort-arrow">${sortArrow(c.key)}</span></th>`).join('')}
+  </tr>`;
+
+  document.querySelectorAll('#table-head th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const s = th.dataset.sort;
+      if (state.sort === s) {
+        state.order = state.order === 'desc' ? 'asc' : 'desc';
+      } else {
+        state.sort = s;
+        state.order = 'desc';
+        document.getElementById('f-sort').value = s;
+      }
+      triggerSearch();
+    });
+  });
+
+  // Body
+  document.getElementById('table-body').innerHTML = results.map(r => `
+    <tr data-id="${r.id}" class="${r.id === state.selectedId ? 'selected' : ''}">
+      <td>
+        <div class="cell-name" title="${esc(r.name)}">${esc(r.name || '—')}</div>
+        <div class="cell-brand" title="${esc(r.brand)}">${esc(r.brand || '—')}</div>
+      </td>
+      <td class="cell-rating">${fmtRating(r.rating)}</td>
+      <td>${fmt(r.votes)}</td>
+      <td class="cell-bayesian">${fmtBayes(r.bayesian_score)}</td>
+      <td>${r.year || '—'}</td>
+      ${extraVisible.map(c => `<td>${c.render(r)}</td>`).join('')}
+    </tr>`).join('');
+
+  document.querySelectorAll('#table-body tr').forEach(tr => {
+    tr.addEventListener('click', () => {
+      document.querySelectorAll('#table-body tr').forEach(t => t.classList.remove('selected'));
+      tr.classList.add('selected');
+      state.selectedId = parseInt(tr.dataset.id);
+      showDetail(state.selectedId);
+    });
+  });
+
+  updatePagination(total, page, page_size, pages);
+}
+
+function sortArrow(col) {
+  if (state.sort !== col) return '';
+  return state.order === 'desc' ? '↓' : '↑';
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---- Pagination ----
+function updatePagination(total, page, page_size, pages) {
+  document.getElementById('page-info').textContent =
+    total ? `Page ${page} of ${pages} (${total.toLocaleString()} results)` : 'No results';
+  document.getElementById('btn-first').disabled = page <= 1;
+  document.getElementById('btn-prev').disabled = page <= 1;
+  document.getElementById('btn-next').disabled = page >= pages;
+  document.getElementById('btn-last').disabled = page >= pages;
+
+  document.getElementById('btn-first').onclick = () => { state.page = 1; fetchResults(); };
+  document.getElementById('btn-prev').onclick = () => { state.page--; fetchResults(); };
+  document.getElementById('btn-next').onclick = () => { state.page++; fetchResults(); };
+  document.getElementById('btn-last').onclick = () => { state.page = pages; fetchResults(); };
+}
+
+// ---- Detail Panel ----
+async function showDetail(id) {
+  const res = await fetch(`/api/fragrance/${id}`);
+  const f = await res.json();
+  if (f.error) return;
+
+  const C = state.globals?.mean_rating || 3.99;
+  const m = state.globals?.median_votes || 61;
+  const bayesian = ((C * m) + (f.rating || 0) * (f.votes || 0)) / (m + (f.votes || 0));
+
+  const totalSent = (f.rating_love||0)+(f.rating_like||0)+(f.rating_ok||0)+(f.rating_dislike||0)+(f.rating_hate||0);
+  const totalSent2 = (f.rating_love||0)+(f.rating_like||0)+(f.rating_ok||0)+(f.rating_dislike||0)+(f.rating_hate||0);
+  const pLiked    = totalSent2 > 0 ? ((f.rating_love||0)+(f.rating_like||0)) / totalSent2 : 0;
+  const pDisliked = totalSent2 > 0 ? ((f.rating_dislike||0)+(f.rating_hate||0)) / totalSent2 : 0;
+  // Liked: P(liked)*(2*love+like) - P(disliked)*(dislike+2*hate), normalized by total
+  const likedScore = totalSent2 > 0
+    ? (pLiked * (2*(f.rating_love||0)+(f.rating_like||0)) - pDisliked * ((f.rating_dislike||0)+2*(f.rating_hate||0))) / totalSent2
+    : null;
+  // Loved: pure love%
+  const lovedScore = totalSent2 > 0 ? (f.rating_love||0) / totalSent2 : null;
+  // Friendly: Bayesian-smoothed positive rate
+  const mVal = state.globals?.median_votes || 61;
+  const friendlyScore = (totalSent2 + mVal) > 0 ? ((f.rating_love||0)+(f.rating_like||0)) / (totalSent2 + mVal) : null;
+  // Controversial: 2 * min(P(liked), P(disliked))
+  const controversialScore = totalSent2 > 0 ? 2 * Math.min(pLiked, pDisliked) : null;
+
+  const accords = (f.accords_json || []).slice().sort((a,b) => b.strength_pct - a.strength_pct);
+  const topNotes = f.top_notes_json || [];
+  const midNotes = f.middle_notes_json || [];
+  const baseNotes = f.base_notes_json || [];
+
+  document.getElementById('detail-placeholder').style.display = 'none';
+  const content = document.getElementById('detail-content');
+  content.classList.add('visible');
+
+  content.innerHTML = `
+    <div class="detail-name">${esc(f.name || '—')}</div>
+    <div class="detail-sub">${esc(f.brand || '')}${f.brand && f.year ? ' · ' : ''}${f.year || ''}</div>
+
+    <div class="detail-stats">
+      <div class="detail-stat">
+        <span class="detail-stat-label">Rating</span>
+        <span class="detail-stat-val stat-rating">${fmtRating(f.rating)}<span style="font-size:11px;color:var(--text-muted)"> / 5</span></span>
+      </div>
+      <div class="detail-stat">
+        <span class="detail-stat-label">Votes</span>
+        <span class="detail-stat-val stat-votes">${fmt(f.votes)}</span>
+      </div>
+      <div class="detail-stat">
+        <span class="detail-stat-label">Bayesian</span>
+        <span class="detail-stat-val stat-bayesian">${fmtBayes(bayesian)}</span>
+      </div>
+      ${likedScore != null ? `<div class="detail-stat">
+        <span class="detail-stat-label">Liked</span>
+        <span class="detail-stat-val stat-liked">${(likedScore*100).toFixed(1)}%</span>
+      </div>` : ''}
+      ${lovedScore != null ? `<div class="detail-stat">
+        <span class="detail-stat-label">Loved</span>
+        <span class="detail-stat-val stat-liked">${(lovedScore*100).toFixed(1)}%</span>
+      </div>` : ''}
+      ${friendlyScore != null ? `<div class="detail-stat">
+        <span class="detail-stat-label">Friendly</span>
+        <span class="detail-stat-val stat-bayesian">${(friendlyScore*100).toFixed(1)}%</span>
+      </div>` : ''}
+      ${controversialScore != null ? `<div class="detail-stat">
+        <span class="detail-stat-label">Controversial</span>
+        <span class="detail-stat-val" style="color:#c87c3c">${(controversialScore*100).toFixed(1)}%</span>
+      </div>` : ''}
+    </div>
+
+    ${f.url ? `<a class="detail-link" href="${esc(f.url)}" target="_blank">View on Fragrantica ↗</a>` : ''}
+
+    ${(topNotes.length || midNotes.length || baseNotes.length) ? `
+    <hr class="detail-hr">
+    <div class="detail-section-title">Notes</div>
+    ${notePyramidLayer('Top', topNotes)}
+    ${notePyramidLayer('Middle', midNotes)}
+    ${notePyramidLayer('Base', baseNotes)}
+    ` : ''}
+
+    ${accords.length ? `
+    <hr class="detail-hr">
+    <div class="detail-section-title">Accords</div>
+    <div class="bar-chart">
+      ${accords.map(a => accordRow(a.name, a.strength_pct)).join('')}
+    </div>` : ''}
+
+    ${totalSent > 0 ? `
+    <hr class="detail-hr">
+    <div class="detail-section-title">Sentiment</div>
+    <div class="bar-chart">
+      ${barRow('Love', f.rating_love, totalSent, 'love')}
+      ${barRow('Like', f.rating_like, totalSent, 'like')}
+      ${barRow('OK', f.rating_ok, totalSent, 'ok')}
+      ${barRow('Dislike', f.rating_dislike, totalSent, 'dislike')}
+      ${barRow('Hate', f.rating_hate, totalSent, 'hate')}
+    </div>` : ''}
+
+    ${renderVoteGroup('Longevity', [
+      ['Very Weak', f.longevity_very_weak],
+      ['Weak', f.longevity_weak],
+      ['Moderate', f.longevity_moderate],
+      ['Long Lasting', f.longevity_long_lasting],
+      ['Eternal', f.longevity_eternal],
+    ])}
+
+    ${renderVoteGroup('Sillage', [
+      ['Intimate', f.sillage_intimate],
+      ['Moderate', f.sillage_moderate],
+      ['Strong', f.sillage_strong],
+      ['Enormous', f.sillage_enormous],
+    ])}
+
+    ${renderVoteGroup('Gender', [
+      ['Feminine', f.gender_female],
+      ['More Fem.', f.gender_more_female],
+      ['Unisex', f.gender_unisex],
+      ['More Masc.', f.gender_more_male],
+      ['Masculine', f.gender_male],
+    ])}
+
+    ${renderVoteGroup('Season', [
+      ['Spring', f.season_spring],
+      ['Summer', f.season_summer],
+      ['Fall', f.season_fall],
+      ['Winter', f.season_winter],
+    ])}
+
+    ${renderVoteGroup('Time of Day', [
+      ['Day', f.time_day],
+      ['Night', f.time_night],
+    ])}
+
+    ${renderVoteGroup('Price Perception', [
+      ['Way Overpriced', f.price_way_overpriced],
+      ['Overpriced', f.price_overpriced],
+      ['OK', f.price_ok],
+      ['Good Value', f.price_good_value],
+      ['Great Value', f.price_great_value],
+    ])}
+  `;
+}
+
+function barRow(label, val, total, cls='') {
+  const pct = total > 0 ? Math.round((val || 0) / total * 100) : 0;
+  return `<div class="bar-row">
+    <span class="bar-label">${label}</span>
+    <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
+    <span class="bar-pct">${pct}%</span>
+  </div>`;
+}
+
+function accordRow(name, strength) {
+  const pct = Math.round(strength || 0);
+  return `<div class="bar-row">
+    <span class="bar-label" style="min-width:100px;font-size:10px">${esc(name)}</span>
+    <div class="bar-track"><div class="bar-fill accord" style="width:${pct}%"></div></div>
+    <span class="bar-pct">${pct}%</span>
+  </div>`;
+}
+
+function renderVoteGroup(title, pairs) {
+  const total = pairs.reduce((s, [,v]) => s + (v || 0), 0);
+  if (!total) return '';
+  return `<hr class="detail-hr">
+    <div class="detail-section-title">${title}</div>
+    <div class="bar-chart">
+      ${pairs.map(([label, val]) => barRow(label, val, total)).join('')}
+    </div>`;
+}
+
+function notePyramidLayer(label, notes) {
+  if (!notes.length) return '';
+  const sorted = notes.slice().sort((a,b) => b.strength_pct - a.strength_pct);
+  return `<div class="note-layer">
+    <div class="note-layer-label">${label}</div>
+    <div class="note-pills">
+      ${sorted.map(n => `<span class="note-pill" title="${Math.round(n.strength_pct)}%">${esc(n.name)}</span>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ---- Column toggle ----
+const colToggleBtn = document.getElementById('col-toggle-btn');
+const colToggleMenu = document.getElementById('col-toggle-menu');
+colToggleBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  colToggleMenu.classList.toggle('open');
+});
+document.addEventListener('click', () => colToggleMenu.classList.remove('open'));
+
+document.querySelectorAll('#col-toggle-menu input[type=checkbox]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    if (cb.checked) state.extraCols.add(cb.dataset.col);
+    else state.extraCols.delete(cb.dataset.col);
+    fetchResults();
+  });
+});
+
+// ---- Filter event bindings ----
+function bindFilter(id, stateKey, immediate = false) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('change', () => { state[stateKey] = el.value; triggerSearch(); });
+  if (!immediate) el.addEventListener('input', () => { state[stateKey] = el.value; debounce(triggerSearch); });
+}
+
+document.getElementById('f-q').addEventListener('input', e => {
+  state.q = e.target.value;
+  debounce(triggerSearch);
+});
+document.getElementById('search-input').addEventListener('input', e => {
+  state.q = e.target.value;
+  document.getElementById('f-q').value = e.target.value;
+  debounce(triggerSearch);
+});
+document.getElementById('f-brand').addEventListener('change', e => { state.brand = e.target.value; triggerSearch(); });
+document.getElementById('f-year-min').addEventListener('input', e => { state.yearMin = e.target.value; debounce(triggerSearch); });
+document.getElementById('f-year-max').addEventListener('input', e => { state.yearMax = e.target.value; debounce(triggerSearch); });
+document.getElementById('f-rating-min').addEventListener('input', e => { state.ratingMin = e.target.value; debounce(triggerSearch); });
+document.getElementById('f-rating-max').addEventListener('input', e => { state.ratingMax = e.target.value; debounce(triggerSearch); });
+document.getElementById('f-votes-min').addEventListener('input', e => { state.votesMin = e.target.value; debounce(triggerSearch); });
+document.getElementById('f-longevity').addEventListener('change', e => { state.longevity = e.target.value; triggerSearch(); });
+document.getElementById('f-sillage').addEventListener('change', e => { state.sillage = e.target.value; triggerSearch(); });
+document.getElementById('f-season').addEventListener('change', e => { state.season = e.target.value; triggerSearch(); });
+document.getElementById('f-gender').addEventListener('change', e => { state.gender = e.target.value; triggerSearch(); });
+
+document.getElementById('f-sort').addEventListener('change', e => { state.sort = e.target.value; triggerSearch(); });
+document.getElementById('f-order').addEventListener('change', e => { state.order = e.target.value; triggerSearch(); });
+document.getElementById('f-page-size').addEventListener('change', e => { state.pageSize = parseInt(e.target.value); triggerSearch(); });
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  state.q = ''; state.brand = ''; state.yearMin = ''; state.yearMax = '';
+  state.ratingMin = ''; state.ratingMax = ''; state.votesMin = '';
+  state.longevity = ''; state.sillage = ''; state.season = ''; state.gender = '';
+  state.sort = 'bayesian'; state.order = 'desc';
+
+  document.getElementById('f-q').value = '';
+  document.getElementById('search-input').value = '';
+  document.getElementById('f-brand').value = '';
+  document.getElementById('f-year-min').value = '';
+  document.getElementById('f-year-max').value = '';
+  document.getElementById('f-rating-min').value = '';
+  document.getElementById('f-rating-max').value = '';
+  document.getElementById('f-votes-min').value = '';
+  document.getElementById('f-longevity').value = '';
+  document.getElementById('f-sillage').value = '';
+  document.getElementById('f-season').value = '';
+  document.getElementById('f-gender').value = '';
+  document.getElementById('f-sort').value = 'bayesian';
+  document.getElementById('f-order').value = 'desc';
+  document.getElementById('conditions-list').innerHTML = '';
+  triggerSearch();
+});
+
+// ---- Init ----
+async function init() {
+  const stats = await fetch('/api/stats').then(r => r.json());
+  state.globals = stats;
+  document.getElementById('stats-bar').textContent =
+    `${stats.total_count.toLocaleString()} fragrances · ${stats.brand_list.length.toLocaleString()} brands`;
+
+  const brandSel = document.getElementById('f-brand');
+  stats.brand_list.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b; opt.textContent = b;
+    brandSel.appendChild(opt);
+  });
+
+  fetchResults();
+}
+
+init();
+</script>
+</body>
+</html>
