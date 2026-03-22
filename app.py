@@ -231,9 +231,29 @@ def build_query(args: dict):
     except (ValueError, TypeError):
         pass
 
+    _season_param = args.get("season", "").strip()
+    _s = lambda c: f"COALESCE({c},0)"
+    _season_total = f"NULLIF({_s('season_spring')}+{_s('season_summer')}+{_s('season_fall')}+{_s('season_winter')},0)"
+    _time_total   = f"NULLIF({_s('time_day')}+{_s('time_night')},0)"
+    if _season_param == "hot":
+        wheres.append(f"{_s('season_spring')}+{_s('season_summer')} > {_s('season_fall')}+{_s('season_winter')}")
+    elif _season_param == "cold":
+        wheres.append(f"{_s('season_fall')}+{_s('season_winter')} > {_s('season_spring')}+{_s('season_summer')}")
+    elif _season_param == "universal":
+        wheres.append(
+            f"CAST({_s('season_spring')} AS REAL)/{_season_total} >= 0.20"
+            f" AND CAST({_s('season_summer')} AS REAL)/{_season_total} >= 0.20"
+            f" AND CAST({_s('season_fall')}   AS REAL)/{_season_total} >= 0.20"
+            f" AND CAST({_s('season_winter')} AS REAL)/{_season_total} >= 0.20"
+            f" AND CAST({_s('time_day')}   AS REAL)/{_time_total} >= 0.40"
+            f" AND CAST({_s('time_night')} AS REAL)/{_time_total} >= 0.40"
+        )
+
     for group_name, cols in VOTE_GROUPS.items():
         selected = args.get(group_name, "").strip()
         if not selected:
+            continue
+        if group_name == "season" and _season_param in ("hot", "cold", "universal"):
             continue
         full_col = f"{group_name}_{selected}"
         if full_col not in VALID_COLS:
