@@ -178,7 +178,7 @@ def build_query(args: dict):
 
     select = f"""
         SELECT
-            id, name, brand, year, url, rating, votes,
+            id, name, brand, year, url, rating, votes, image_url,
             ({C} * {m} + COALESCE(rating,0) * COALESCE(votes,0)) / ({m} + COALESCE(votes,0)) AS bayesian_score,
             {liked_expr} AS liked_score,
             {loved_expr} AS loved_score,
@@ -277,6 +277,13 @@ def build_query(args: dict):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/notes")
+def notes():
+    db = get_db()
+    rows = db.execute("SELECT name, image_url FROM notes WHERE image_url IS NOT NULL").fetchall()
+    return jsonify({r["name"]: r["image_url"] for r in rows})
 
 
 @app.route("/api/stats")

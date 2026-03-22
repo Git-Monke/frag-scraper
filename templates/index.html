@@ -315,6 +315,9 @@ hr.divider {
 
 .cell-name { font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .cell-brand { color: var(--text-dim); max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.thumb-cell { display: flex; align-items: center; gap: 8px; }
+.thumb-sm { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--bg3); }
+.detail-bottle { width: 120px; float: right; margin: 0 0 12px 12px; border-radius: 6px; object-fit: contain; background: var(--bg3); }
 .cell-rating { color: var(--amber); font-weight: 600; }
 .cell-bayesian { color: #7cb8d4; font-weight: 600; }
 .cell-liked { color: var(--like); font-weight: 600; }
@@ -452,17 +455,69 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
 .bar-pct { min-width: 30px; color: var(--text-muted); font-size: 10px; }
 
 /* Notes pyramid */
-.note-layer { margin-bottom: 6px; }
-.note-layer-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 3px; }
-.note-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.note-layer { margin-bottom: 10px; }
+.note-layer-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px; }
+.note-pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .note-pill {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 68px;
+  text-align: center;
 }
+.note-pill-img-wrap {
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 4px;
+}
+.note-pill img {
+  object-fit: cover; border-radius: 8px;
+  background: white;
+  transition: width 0.2s, height 0.2s, opacity 0.2s;
+}
+.note-pill-name {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.3;
+  word-break: break-word;
+  hyphens: auto;
+}
+.note-pill-pct { font-size: 9px; color: var(--text-muted); }
+
+/* View toggle */
+.view-toggle { display: flex; gap: 2px; }
+.view-btn {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-dim); cursor: pointer; padding: 4px 9px; font-size: 15px;
+  transition: background 0.15s;
+}
+.view-btn.active { background: var(--amber); color: #1a1510; border-color: var(--amber); }
+.view-btn:hover:not(.active) { background: var(--bg2); color: var(--text); }
+
+/* Card grid */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+.frag-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; overflow: hidden;
+  transition: border-color 0.15s;
+}
+.frag-card:hover { border-color: var(--amber); }
+.frag-card.selected { border-color: var(--amber); background: #1e1a0e; }
+.frag-card-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; background: var(--bg3); }
+.frag-card-img-ph {
+  width: 100%; aspect-ratio: 3/4; background: var(--bg3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; color: var(--text-muted);
+}
+.frag-card-info { padding: 6px 8px 8px; }
+.frag-card-name { font-weight: 500; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frag-card-brand { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frag-card-score { font-size: 11px; color: var(--amber); font-weight: 600; margin-top: 2px; }
 
 /* Loading spinner */
 #loading {
@@ -612,6 +667,11 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
         </select>
       </div>
 
+      <div class="view-toggle">
+        <button id="view-list-btn" class="view-btn active" title="List view">☰</button>
+        <button id="view-grid-btn" class="view-btn" title="Grid view">⊞</button>
+      </div>
+
       <div class="col-toggle-wrap">
         <button id="col-toggle-btn">Columns ▾</button>
         <div id="col-toggle-menu">
@@ -634,6 +694,7 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
         <thead id="table-head"></thead>
         <tbody id="table-body"></tbody>
       </table>
+      <div id="grid-wrap" style="display:none"></div>
     </div>
 
     <div id="pagination">
@@ -678,6 +739,8 @@ const state = {
   extraCols: new Set(),
   globals: null,
   selectedId: null,
+  view: 'list',
+  noteImages: {},
 };
 
 let debounceTimer = null;
@@ -855,18 +918,30 @@ function renderTable(data) {
   const empty = document.getElementById('empty-state');
   const err = document.getElementById('error-state');
   const tbl = document.getElementById('results-table');
+  const gridWrap = document.getElementById('grid-wrap');
 
   err.style.display = 'none';
   if (!results.length) {
     empty.style.display = 'block';
     tbl.style.display = 'none';
+    gridWrap.style.display = 'none';
     updatePagination(0, 1, 1, 1);
     return;
   }
   empty.style.display = 'none';
-  tbl.style.display = 'table';
 
-  // Header
+  if (state.view === 'grid') {
+    renderGridView(results, gridWrap, tbl);
+  } else {
+    renderListView(results, tbl, gridWrap);
+  }
+  updatePagination(total, page, page_size, pages);
+}
+
+function renderListView(results, tbl, gridWrap) {
+  tbl.style.display = 'table';
+  gridWrap.style.display = 'none';
+
   const sortCol = state.sort;
   const extraVisible = EXTRA_COLS.filter(c => state.extraCols.has(c.key));
 
@@ -893,7 +968,6 @@ function renderTable(data) {
     });
   });
 
-  // Body
   document.getElementById('table-body').innerHTML = results.map(r => `
     <tr data-id="${r.id}" class="${r.id === state.selectedId ? 'selected' : ''}">
       <td>
@@ -915,8 +989,35 @@ function renderTable(data) {
       showDetail(state.selectedId);
     });
   });
+}
 
-  updatePagination(total, page, page_size, pages);
+function renderGridView(results, gridWrap, tbl) {
+  tbl.style.display = 'none';
+  gridWrap.style.display = 'block';
+
+  gridWrap.innerHTML = `<div class="card-grid">
+    ${results.map(r => `
+      <div class="frag-card${r.id === state.selectedId ? ' selected' : ''}" data-id="${r.id}">
+        ${r.image_url
+          ? `<img class="frag-card-img" src="${esc(r.image_url)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          : ''}
+        <div class="frag-card-img-ph" style="display:${r.image_url ? 'none' : 'flex'}">🧴</div>
+        <div class="frag-card-info">
+          <div class="frag-card-name" title="${esc(r.name)}">${esc(r.name || '—')}</div>
+          <div class="frag-card-brand" title="${esc(r.brand)}">${esc(r.brand || '')}</div>
+          <div class="frag-card-score">${fmtBayes(r.bayesian_score)}</div>
+        </div>
+      </div>`).join('')}
+  </div>`;
+
+  gridWrap.querySelectorAll('.frag-card').forEach(card => {
+    card.addEventListener('click', () => {
+      gridWrap.querySelectorAll('.frag-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      state.selectedId = parseInt(card.dataset.id);
+      showDetail(state.selectedId);
+    });
+  });
 }
 
 function sortArrow(col) {
@@ -980,6 +1081,7 @@ async function showDetail(id) {
   content.classList.add('visible');
 
   content.innerHTML = `
+    ${f.image_url ? `<img class="detail-bottle" src="${esc(f.image_url)}" alt="${esc(f.name || '')}" onerror="this.style.display='none'">` : ''}
     <div class="detail-name">${esc(f.name || '—')}</div>
     <div class="detail-sub">${esc(f.brand || '')}${f.brand && f.year ? ' · ' : ''}${f.year || ''}</div>
 
@@ -1014,6 +1116,7 @@ async function showDetail(id) {
       </div>` : ''}
     </div>
 
+    <div style="clear:both"></div>
     ${f.url ? `<a class="detail-link" href="${esc(f.url)}" target="_blank">View on Fragrantica ↗</a>` : ''}
 
     ${(topNotes.length || midNotes.length || baseNotes.length) ? `
@@ -1121,10 +1224,37 @@ function notePyramidLayer(label, notes) {
   return `<div class="note-layer">
     <div class="note-layer-label">${label}</div>
     <div class="note-pills">
-      ${sorted.map(n => `<span class="note-pill" title="${Math.round(n.strength_pct)}%">${esc(n.name)}</span>`).join('')}
+      ${sorted.map(n => {
+        const img = state.noteImages?.[n.name];
+        const pct = n.strength_pct != null ? n.strength_pct : 100;
+        const scale = 0.5 + pct / 200;
+        const imgSize = Math.round(52 * scale);
+        const opacity = scale.toFixed(2);
+        return `<div class="note-pill">
+          <div class="note-pill-img-wrap">
+            ${img ? `<img src="${esc(img)}" alt="${esc(n.name)}" style="width:${imgSize}px;height:${imgSize}px;opacity:${opacity}" onerror="this.style.display='none'">` : ''}
+          </div>
+          <span class="note-pill-name">${esc(n.name)}</span>
+          <span class="note-pill-pct">${n.strength_pct != null ? Math.round(n.strength_pct)+'%' : ''}</span>
+        </div>`;
+      }).join('')}
     </div>
   </div>`;
 }
+
+// ---- View toggle ----
+document.getElementById('view-list-btn').addEventListener('click', () => {
+  state.view = 'list';
+  document.getElementById('view-list-btn').classList.add('active');
+  document.getElementById('view-grid-btn').classList.remove('active');
+  fetchResults();
+});
+document.getElementById('view-grid-btn').addEventListener('click', () => {
+  state.view = 'grid';
+  document.getElementById('view-grid-btn').classList.add('active');
+  document.getElementById('view-list-btn').classList.remove('active');
+  fetchResults();
+});
 
 // ---- Column toggle ----
 const colToggleBtn = document.getElementById('col-toggle-btn');
@@ -1201,8 +1331,12 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 
 // ---- Init ----
 async function init() {
-  const stats = await fetch('/api/stats').then(r => r.json());
+  const [stats, noteImages] = await Promise.all([
+    fetch('/api/stats').then(r => r.json()),
+    fetch('/api/notes').then(r => r.json()),
+  ]);
   state.globals = stats;
+  state.noteImages = noteImages;
   document.getElementById('stats-bar').textContent =
     `${stats.total_count.toLocaleString()} fragrances · ${stats.brand_list.length.toLocaleString()} brands`;
 

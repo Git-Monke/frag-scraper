@@ -689,10 +689,17 @@ class FragranticaScraper:
     def scrape_and_save(self, url: str) -> dict | None:
         data = self.scrape(url)
         if data and self.db:
-            self.db.upsert_fragrance(data)
+            # Collect notes with image_url BEFORE stripping from the JSON columns
             all_notes = []
             for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
                 all_notes.extend(data.get(layer) or [])
+
+            # Strip image_url from note dicts so it isn't serialized into JSON columns
+            for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
+                for note in (data.get(layer) or []):
+                    note.pop('image_url', None)
+
+            self.db.upsert_fragrance(data)
             self.db.upsert_notes(all_notes)
         return data
 
