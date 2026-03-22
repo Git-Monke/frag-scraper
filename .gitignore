@@ -1,3 +1,12 @@
 .claude
 *.db
 __pycache__
+analysis.py
+example_page.html
+fragrances.sqbpro
+links.json
+live_page.html
+templates/
+test_single.py
+test_vpn.py
+hidden

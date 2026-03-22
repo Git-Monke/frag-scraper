@@ -43,7 +43,6 @@ class FragranticaDB:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._create_tables()
-        self._migrate()
 
     def _create_tables(self):
         self._conn.executescript("""
@@ -97,24 +96,14 @@ class FragranticaDB:
             top_notes_json          TEXT,
             middle_notes_json       TEXT,
             base_notes_json         TEXT,
-            accords_json            TEXT
+            accords_json            TEXT,
+            image_url               TEXT
         );
-        """)
-        self._conn.commit()
 
-    def _migrate(self):
-        try:
-            self._conn.execute("ALTER TABLE fragrances ADD COLUMN accords_json TEXT")
-        except Exception:
-            pass
-        for col in ('gender', 'similar_fragrances_json'):
-            try:
-                self._conn.execute(f"ALTER TABLE fragrances DROP COLUMN {col}")
-            except Exception:
-                pass
-        self._conn.executescript("""
-            DROP TABLE IF EXISTS accords;
-            DROP TABLE IF EXISTS perfumers;
+        CREATE TABLE IF NOT EXISTS notes (
+            name       TEXT PRIMARY KEY,
+            image_url  TEXT
+        );
         """)
         self._conn.commit()
 
@@ -134,7 +123,7 @@ class FragranticaDB:
             'price_way_overpriced', 'price_overpriced', 'price_ok',
             'price_good_value', 'price_great_value',
             'top_notes_json', 'middle_notes_json', 'base_notes_json',
-            'accords_json',
+            'accords_json', 'image_url',
         ]
 
         row = {c: data.get(c) for c in cols}
@@ -153,6 +142,18 @@ class FragranticaDB:
 
         self._conn.commit()
         return frag_id
+
+    def upsert_notes(self, notes: list[dict]):
+        """Insert or ignore note name→image_url pairs."""
+        for note in notes:
+            name = note.get('name')
+            image_url = note.get('image_url')
+            if name:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO notes (name, image_url) VALUES (?, ?)",
+                    (name, image_url),
+                )
+        self._conn.commit()
 
     def is_scraped(self, url: str) -> bool:
         m = re.search(r'-(\d+)\.html$', url)
@@ -196,6 +197,7 @@ class FragranticaParser:
         data.update(FragranticaParser._parse_basic(soup, url))
         data.update(FragranticaParser._parse_rating(soup))
         data['accords_json'] = FragranticaParser._parse_accords(soup)
+        data['image_url'] = FragranticaParser._parse_fragrance_image(soup)
         data.update(FragranticaParser._parse_notes(soup))
         data.update(FragranticaParser._parse_vote_widget(soup, 'longevity'))
         data.update(FragranticaParser._parse_vote_widget(soup, 'sillage'))
@@ -248,6 +250,16 @@ class FragranticaParser:
             pass
 
         return result
+
+    @staticmethod
+    def _parse_fragrance_image(soup) -> str | None:
+        try:
+            img = soup.find('img', attrs={'itemprop': 'image'})
+            if img:
+                return img.get('src')
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _parse_rating(soup) -> dict:
@@ -355,7 +367,8 @@ class FragranticaParser:
                             continue
                         m = re.search(r'width:\s*([\d.]+)rem', img.get('style', ''))
                         strength_pct = round((float(m.group(1)) / 5.0) * 100, 1) if m else None
-                        result[current_layer].append({'name': name, 'strength_pct': strength_pct})
+                        img_src = img.get('src', '').strip() or None
+                        result[current_layer].append({'name': name, 'strength_pct': strength_pct, 'image_url': img_src})
             else:
                 # Flat list with no hierarchy — store everything as top notes
                 for a in pyramid.select('a.pyramid-note-link'):
@@ -367,7 +380,8 @@ class FragranticaParser:
                         continue
                     m = re.search(r'width:\s*([\d.]+)rem', img.get('style', ''))
                     strength_pct = round((float(m.group(1)) / 5.0) * 100, 1) if m else None
-                    result['top_notes_json'].append({'name': name, 'strength_pct': strength_pct})
+                    img_src = img.get('src', '').strip() or None
+                    result['top_notes_json'].append({'name': name, 'strength_pct': strength_pct, 'image_url': img_src})
         except Exception:
             pass
 
@@ -691,6 +705,10 @@ class FragranticaScraper:
         data = self.scrape(url)
         if data and self.db:
             self.db.upsert_fragrance(data)
+            all_notes = []
+            for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
+                all_notes.extend(data.get(layer) or [])
+            self.db.upsert_notes(all_notes)
         return data
 
     def scrape_many(self, urls: list, skip_existing: bool = True,
