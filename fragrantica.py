@@ -8,11 +8,13 @@ Classes:
 """
 
 import json
+import queue
 import re
 import sqlite3
 import subprocess
 import time
 import random
+import threading
 from datetime import datetime, timezone
 
 from playwright.sync_api import sync_playwright
@@ -39,9 +41,10 @@ def _parse_abbrev_count(s: str) -> int | None:
 
 class FragranticaDB:
     def __init__(self, db_path: str = "fragrances.db"):
-        self._conn = sqlite3.connect(db_path)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
+        self._lock = threading.Lock()
         self._create_tables()
 
     def _create_tables(self):
@@ -135,46 +138,50 @@ class FragranticaDB:
 
         col_list = ', '.join(cols)
         placeholders = ', '.join(f':{c}' for c in cols)
-        self._conn.execute(
-            f"INSERT OR REPLACE INTO fragrances ({col_list}) VALUES ({placeholders})",
-            row,
-        )
-
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                f"INSERT OR REPLACE INTO fragrances ({col_list}) VALUES ({placeholders})",
+                row,
+            )
+            self._conn.commit()
         return frag_id
 
     def upsert_notes(self, notes: list[dict]):
         """Insert or ignore note name→image_url pairs."""
-        for note in notes:
-            name = note.get('name')
-            image_url = note.get('image_url')
-            if name:
-                self._conn.execute(
-                    "INSERT OR IGNORE INTO notes (name, image_url) VALUES (?, ?)",
-                    (name, image_url),
-                )
-        self._conn.commit()
+        with self._lock:
+            for note in notes:
+                name = note.get('name')
+                image_url = note.get('image_url')
+                if name:
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO notes (name, image_url) VALUES (?, ?)",
+                        (name, image_url),
+                    )
+            self._conn.commit()
 
     def is_scraped(self, url: str) -> bool:
         m = re.search(r'-(\d+)\.html$', url)
-        if m:
-            row = self._conn.execute(
-                "SELECT 1 FROM fragrances WHERE id = ?", (int(m.group(1)),)
-            ).fetchone()
-        else:
-            row = self._conn.execute(
-                "SELECT 1 FROM fragrances WHERE url = ?", (url,)
-            ).fetchone()
+        with self._lock:
+            if m:
+                row = self._conn.execute(
+                    "SELECT 1 FROM fragrances WHERE id = ?", (int(m.group(1)),)
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT 1 FROM fragrances WHERE url = ?", (url,)
+                ).fetchone()
         return row is not None
 
     def get_all(self) -> list[dict]:
-        rows = self._conn.execute("SELECT * FROM fragrances").fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM fragrances").fetchall()
         return [dict(r) for r in rows]
 
     def get_by_url(self, url: str) -> dict | None:
-        row = self._conn.execute(
-            "SELECT * FROM fragrances WHERE url = ?", (url,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM fragrances WHERE url = ?", (url,)
+            ).fetchone()
         return dict(row) if row else None
 
     def close(self):
@@ -593,22 +600,38 @@ class FragranticaScraper:
         self.retry_wait = retry_wait
         self.max_retries = max_retries
         self.restart_every = restart_every
+        self._vpn_lock     = threading.Lock()
+        self._browser_lock = threading.Lock()
+        self._print_lock   = threading.Lock()
+        self._count_lock   = threading.Lock()
+        self._ts_lock      = threading.Lock()
+        self._scraped_count = 0
+        self._timestamps: list[float] = []
+        self._last_vpn_cycle = 0.0
         self._pw = sync_playwright().start()
         self._context = None
-        self._browser = self.launch_browser() 
+        self._browser = self.launch_browser()
 
     def _cycle_vpn(self):
-        """Reconnect Mullvad to get a fresh random US server."""
-        print("Cycling VPN (reconnecting for fresh US server)...")
-        try:
-            subprocess.run(['mullvad', 'relay', 'set', 'location', 'us'],
-                           check=True, capture_output=True)
-            subprocess.run(['mullvad', 'reconnect'], check=True, capture_output=True)
-            time.sleep(8)   # wait for new IP to establish
-            print("VPN cycled.")
-        except Exception as e:
-            print(f"VPN cycle failed ({e}), falling back to 60s wait...")
-            time.sleep(60)
+        """Reconnect Mullvad to get a fresh random US server. Thread-safe: only one
+        thread reconnects at a time; others piggyback if VPN was cycled within 8s."""
+        with self._vpn_lock:
+            if (time.monotonic() - self._last_vpn_cycle) < 8:
+                return
+            with self._print_lock:
+                print("Cycling VPN (reconnecting for fresh US server)...")
+            try:
+                subprocess.run(['mullvad', 'relay', 'set', 'location', 'us'],
+                               check=True, capture_output=True)
+                subprocess.run(['mullvad', 'reconnect'], check=True, capture_output=True)
+                time.sleep(4)   # wait for new IP to establish
+                with self._print_lock:
+                    print("VPN cycled.")
+            except Exception as e:
+                with self._print_lock:
+                    print(f"VPN cycle failed ({e}), falling back to 60s wait...")
+                time.sleep(60)
+            self._last_vpn_cycle = time.monotonic()
 
     def launch_browser(self):
         self._browser = self._pw.chromium.launch(
@@ -624,20 +647,23 @@ class FragranticaScraper:
         
         self._context = self._browser.new_context(viewport={"width": 1280, "height": 720})
 
-    def scrape(self, url: str) -> dict | None:
+    def _scrape_page(self, url: str, context) -> dict | None:
+        """Scrape one URL using the given Playwright context (must be in the same thread)."""
         for attempt in range(self.max_retries):
             try:
-                page = self._context.new_page()
+                page = context.new_page()
                 Stealth().apply_stealth_sync(page)
                 try:
                     response = page.goto(url, wait_until='domcontentloaded', timeout=30000)
                     if response and response.status == 429:
-                        print(f"Rate limited on: {url}")
+                        with self._print_lock:
+                            print(f"Rate limited on: {url}")
                         page.close()
                         self._cycle_vpn()
                         continue
                     if response and response.status != 200:
-                        print(f"HTTP {response.status} for {url}")
+                        with self._print_lock:
+                            print(f"HTTP {response.status} for {url}")
                         page.close()
                         self._cycle_vpn()
                         continue
@@ -685,20 +711,25 @@ class FragranticaScraper:
                     page.close()
                 return data
             except Exception as e:
-                print(f"Error scraping {url} (attempt {attempt + 1}/{self.max_retries}): {e}")
+                with self._print_lock:
+                    print(f"Error scraping {url} (attempt {attempt + 1}/{self.max_retries}): {e}")
                 if attempt < self.max_retries - 1:
                     self._cycle_vpn()
         return None
 
-    def _restart_browser(self):
-        print("Restarting browser to free memory...")
-        try:
-            self._context.close()
-            self._browser.close()
-        except Exception:
-            pass
+    def scrape(self, url: str) -> dict | None:
+        return self._scrape_page(url, self._context)
 
-        self.launch_browser()
+    def _restart_browser(self):
+        with self._browser_lock:
+            with self._print_lock:
+                print("Restarting browser to free memory...")
+            try:
+                self._context.close()
+                self._browser.close()
+            except Exception:
+                pass
+            self.launch_browser()
 
     def close(self):
         self._context.close()
@@ -728,51 +759,111 @@ class FragranticaScraper:
             self.db.upsert_notes(all_notes)
         return data
 
+    def _make_browser(self, pw):
+        """Launch a fresh browser + context owned by the calling thread."""
+        browser = pw.chromium.launch(
+            headless=False,
+            args=['--disable-features=Translate', '--disable-gpu',
+                  '--disable-dev-shm-usage', '--disable-software-rasterizer',
+                  '--disable-extensions', '--no-sandbox'],
+        )
+        context = browser.new_context(viewport={"width": 1280, "height": 720})
+        return browser, context
+
     def scrape_many(self, urls: list, skip_existing: bool = True,
                     progress: bool = True) -> list[dict]:
-        results = []
-        total = len(urls)
-        scraped_count = 0
-        # Ring buffer of (timestamp, count) snapshots for moving-average rate.
-        # We keep one snapshot per successful scrape; the window covers the last
-        # 100 scrapes (≈ a few minutes at normal pace) for the per-minute figure,
-        # and we extrapolate to per-hour from that same rate.
+        _MAX_WORKERS = 3
         _WINDOW = 100
-        timestamps: list[float] = []
+        total = len(urls)
 
+        url_queue: queue.Queue = queue.Queue()
         for i, url in enumerate(urls, 1):
-            if skip_existing and self.db and self.db.is_scraped(url):
-                if progress:
-                    print(f"[{i}/{total}] skip  {url}")
-                continue
+            url_queue.put((i, url))
 
-            data = self.scrape_and_save(url)
-            if data:
-                results.append(data)
-                scraped_count += 1
-                timestamps.append(time.monotonic())
-                if len(timestamps) > _WINDOW:
-                    timestamps.pop(0)
+        results = []
+        results_lock = threading.Lock()
 
-                if progress:
-                    name = data.get('name', '?')
-                    rating = data.get('rating')
-                    votes = data.get('votes')
-                    if len(timestamps) >= 2:
-                        span = timestamps[-1] - timestamps[0]
-                        rate_per_min = (len(timestamps) - 1) / span * 60
-                        rate_suffix = f"  {rate_per_min:.1f}/min  {rate_per_min * 60:.0f}/hr"
+        def worker(worker_index: int):
+            time.sleep(worker_index * random.uniform(1, 3))  # stagger initial startup
+            pw = sync_playwright().start()
+            browser, context = self._make_browser(pw)
+            local_count = 0
+            try:
+                while True:
+                    try:
+                        i, url = url_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                    if skip_existing and self.db and self.db.is_scraped(url):
+                        if progress:
+                            with self._print_lock:
+                                print(f"[{i}/{total}] skip  {url}")
+                        continue
+
+                    data = self._scrape_page(url, context)
+
+                    if data and self.db:
+                        all_notes = []
+                        for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
+                            all_notes.extend(data.get(layer) or [])
+                        for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
+                            for note in (data.get(layer) or []):
+                                note.pop('image_url', None)
+                        self.db.upsert_fragrance(data)
+                        self.db.upsert_notes(all_notes)
+
+                    if data:
+                        with results_lock:
+                            results.append(data)
+                        local_count += 1
+
+                        # Per-thread browser restart to free memory
+                        if self.restart_every and local_count % self.restart_every == 0:
+                            with self._print_lock:
+                                print("Restarting browser to free memory...")
+                            try:
+                                context.close()
+                                browser.close()
+                            except Exception:
+                                pass
+                            browser, context = self._make_browser(pw)
+
+                        with self._ts_lock:
+                            self._timestamps.append(time.monotonic())
+                            if len(self._timestamps) > _WINDOW:
+                                self._timestamps.pop(0)
+                            ts = list(self._timestamps)
+
+                        if progress:
+                            name = data.get('name', '?')
+                            rating = data.get('rating')
+                            votes = data.get('votes')
+                            rate_suffix = ""
+                            if len(ts) >= 2:
+                                span = ts[-1] - ts[0]
+                                rpm = (len(ts) - 1) / span * 60
+                                rate_suffix = f"  {rpm:.1f}/min  {rpm * 60:.0f}/hr"
+                            with self._print_lock:
+                                print(f"[{i}/{total}] {name} — {rating} ({votes} votes){rate_suffix}")
                     else:
-                        rate_suffix = ""
-                    print(f"[{i}/{total}] {name} — {rating} ({votes} votes){rate_suffix}")
+                        if progress:
+                            with self._print_lock:
+                                print(f"[{i}/{total}] FAILED  {url}")
 
-                if self.restart_every and scraped_count % self.restart_every == 0:
-                    self._restart_browser()
-            else:
-                if progress:
-                    print(f"[{i}/{total}] FAILED  {url}")
+            finally:
+                try:
+                    context.close()
+                    browser.close()
+                    pw.stop()
+                except Exception:
+                    pass
 
-            if i < total:
-                time.sleep(random.uniform(*self.delay))
+        threads = [threading.Thread(target=worker, args=(i,), daemon=True)
+                   for i in range(_MAX_WORKERS)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
         return results
