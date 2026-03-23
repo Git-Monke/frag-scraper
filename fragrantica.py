@@ -637,7 +637,6 @@ class FragranticaScraper:
         self._browser = self._pw.chromium.launch(
             headless=False,
             args=['--disable-features=Translate',
-                    "--disable-gpu",
                     "--disable-dev-shm-usage",
                     "--disable-software-rasterizer",
                     "--disable-extensions",
@@ -763,7 +762,7 @@ class FragranticaScraper:
         """Launch a fresh browser + context owned by the calling thread."""
         browser = pw.chromium.launch(
             headless=False,
-            args=['--disable-features=Translate', '--disable-gpu',
+            args=['--disable-features=Translate', 
                   '--disable-dev-shm-usage', '--disable-software-rasterizer',
                   '--disable-extensions', '--no-sandbox'],
         )
