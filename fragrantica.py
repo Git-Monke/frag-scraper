@@ -629,10 +629,11 @@ class FragranticaScraper:
                         page.close()
                         self._cycle_vpn()
                         continue
-                    # Scroll 250px at 10Hz until the demographics section (the deepest lazy
+                    # Scroll 500px at 10Hz until the demographics section (the deepest lazy
                     # section we need) enters the viewport — this triggers its IntersectionObserver.
-                    for _ in range(100):
-                        page.evaluate("window.scrollBy(0, 500)")
+                    # Stop after 8000px to avoid getting stuck on abnormally long pages.
+                    for _ in range(20):
+                        page.evaluate("window.scrollBy(0, 250)")
                         time.sleep(0.1)
                         reached = page.evaluate("""
                             () => {
@@ -720,6 +721,13 @@ class FragranticaScraper:
         results = []
         total = len(urls)
         scraped_count = 0
+        # Ring buffer of (timestamp, count) snapshots for moving-average rate.
+        # We keep one snapshot per successful scrape; the window covers the last
+        # 100 scrapes (≈ a few minutes at normal pace) for the per-minute figure,
+        # and we extrapolate to per-hour from that same rate.
+        _WINDOW = 100
+        timestamps: list[float] = []
+
         for i, url in enumerate(urls, 1):
             if skip_existing and self.db and self.db.is_scraped(url):
                 if progress:
@@ -730,11 +738,22 @@ class FragranticaScraper:
             if data:
                 results.append(data)
                 scraped_count += 1
+                timestamps.append(time.monotonic())
+                if len(timestamps) > _WINDOW:
+                    timestamps.pop(0)
+
                 if progress:
                     name = data.get('name', '?')
                     rating = data.get('rating')
                     votes = data.get('votes')
-                    print(f"[{i}/{total}] {name} — {rating} ({votes} votes)")
+                    if len(timestamps) >= 2:
+                        span = timestamps[-1] - timestamps[0]
+                        rate_per_min = (len(timestamps) - 1) / span * 60
+                        rate_suffix = f"  {rate_per_min:.1f}/min  {rate_per_min * 60:.0f}/hr"
+                    else:
+                        rate_suffix = ""
+                    print(f"[{i}/{total}] {name} — {rating} ({votes} votes){rate_suffix}")
+
                 if self.restart_every and scraped_count % self.restart_every == 0:
                     self._restart_browser()
             else:
