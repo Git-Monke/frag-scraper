@@ -21,6 +21,7 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 from bs4 import BeautifulSoup
 
+viewport_size = {"width": 640, "height": 320}
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -594,7 +595,7 @@ class FragranticaParser:
 
 class FragranticaScraper:
 
-    def __init__(self, db=None, delay=(5.0, 9.0), retry_wait=60, max_retries=3, restart_every=50):
+    def __init__(self, db=None, delay=(5.0, 9.0), retry_wait=60, max_retries=3, restart_every=200):
         self.db = db
         self.delay = delay
         self.retry_wait = retry_wait
@@ -644,7 +645,7 @@ class FragranticaScraper:
                 ],
         )
         
-        self._context = self._browser.new_context(viewport={"width": 1280, "height": 720})
+        self._context = self._browser.new_context(viewport=viewport_size)
 
     def _scrape_page(self, url: str, context) -> dict | None:
         """Scrape one URL using the given Playwright context (must be in the same thread)."""
@@ -766,7 +767,7 @@ class FragranticaScraper:
                   '--disable-dev-shm-usage', '--disable-software-rasterizer',
                   '--disable-extensions', '--no-sandbox'],
         )
-        context = browser.new_context(viewport={"width": 1280, "height": 720})
+        context = browser.new_context(viewport=viewport_size)
         return browser, context
 
     def scrape_many(self, urls: list, skip_existing: bool = True,

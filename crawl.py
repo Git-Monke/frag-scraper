@@ -21,7 +21,7 @@ def normalize(href: str) -> str | None:
         return None
     return url
 
-_MAX_WORKERS = 3
+_MAX_WORKERS = 6 
 _WINDOW = 100
 
 
