@@ -594,10 +594,8 @@ class FragranticaScraper:
         self.max_retries = max_retries
         self.restart_every = restart_every
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(
-            headless=False,
-            args=['--disable-features=Translate'],
-        )
+        self._context = None
+        self._browser = self.launch_browser() 
 
     def _cycle_vpn(self):
         """Reconnect Mullvad to get a fresh random US server."""
@@ -612,10 +610,24 @@ class FragranticaScraper:
             print(f"VPN cycle failed ({e}), falling back to 60s wait...")
             time.sleep(60)
 
+    def launch_browser(self):
+        self._browser = self._pw.chromium.launch(
+            headless=False,
+            args=['--disable-features=Translate',
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--disable-software-rasterizer",
+                    "--disable-extensions",
+                    "--no-sandbox",
+                ],
+        )
+        
+        self._context = self._browser.new_context(viewport={"width": 1280, "height": 720})
+
     def scrape(self, url: str) -> dict | None:
         for attempt in range(self.max_retries):
             try:
-                page = self._browser.new_page()
+                page = self._context.new_page()
                 Stealth().apply_stealth_sync(page)
                 try:
                     response = page.goto(url, wait_until='domcontentloaded', timeout=30000)
@@ -632,15 +644,15 @@ class FragranticaScraper:
                     # Scroll 500px at 10Hz until the demographics section (the deepest lazy
                     # section we need) enters the viewport — this triggers its IntersectionObserver.
                     # Stop after 8000px to avoid getting stuck on abnormally long pages.
-                    for _ in range(20):
-                        page.evaluate("window.scrollBy(0, 250)")
+                    for _ in range(40):
+                        page.evaluate("window.scrollBy(0, 1000)")
                         time.sleep(0.1)
                         reached = page.evaluate("""
                             () => {
                                 const el = document.getElementById('demographics');
                                 if (!el) return false;
                                 const rect = el.getBoundingClientRect();
-                                return rect.top < window.innerHeight + 500;
+                                return rect.top < window.innerHeight + 1000;
                             }
                         """)
                         if reached:
@@ -681,15 +693,15 @@ class FragranticaScraper:
     def _restart_browser(self):
         print("Restarting browser to free memory...")
         try:
+            self._context.close()
             self._browser.close()
         except Exception:
             pass
-        self._browser = self._pw.chromium.launch(
-            headless=False,
-            args=['--disable-features=Translate'],
-        )
+
+        self.launch_browser()
 
     def close(self):
+        self._context.close()
         self._browser.close()
         self._pw.stop()
 

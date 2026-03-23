@@ -28,6 +28,9 @@ def main():
 
     print(f"Starting with {len(links)} links in queue")
 
+    _WINDOW = 100 
+    timestamps: list[float] = []
+
     with FragranticaDB() as db:
         with FragranticaScraper(db=db) as scraper:
             try:
@@ -45,7 +48,16 @@ def main():
                             name = data.get('name', '?')
                             rating = data.get('rating')
                             votes = data.get('votes')
-                            print(f"[{idx}/{total}] {name} — {rating} ({votes} votes)")
+                            timestamps.append(time.time())
+                            if len(timestamps) > _WINDOW:
+                                timestamps.pop(0)
+                            if len(timestamps) >= 2:
+                                span = timestamps[-1] - timestamps[0]
+                                rate_per_min = (len(timestamps) - 1) / span * 60
+                                rate_suffix = f"  {rate_per_min:.1f}/min  {rate_per_min * 60:.0f}/hr"
+                            else:
+                                rate_suffix = ""
+                            print(f"[{idx}/{total}] {name} — {rating} ({votes} votes){rate_suffix}")
                             similar = data.get('similar_fragrances_json') or []
                         else:
                             print(f"[{idx}/{total}] FAILED  {url}")
@@ -72,3 +84,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
