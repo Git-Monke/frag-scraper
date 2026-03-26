@@ -148,14 +148,15 @@ class FragranticaDB:
         return frag_id
 
     def upsert_notes(self, notes: list[dict]):
-        """Insert or ignore note name→image_url pairs."""
+        """Insert or update note name→image_url pairs."""
         with self._lock:
             for note in notes:
                 name = note.get('name')
                 image_url = note.get('image_url')
                 if name:
+                    # Use INSERT OR REPLACE to update existing entries
                     self._conn.execute(
-                        "INSERT OR IGNORE INTO notes (name, image_url) VALUES (?, ?)",
+                        "INSERT OR REPLACE INTO notes (name, image_url) VALUES (?, ?)",
                         (name, image_url),
                     )
             self._conn.commit()
@@ -375,7 +376,10 @@ class FragranticaParser:
                             continue
                         m = re.search(r'width:\s*([\d.]+)rem', img.get('style', ''))
                         strength_pct = round((float(m.group(1)) / 5.0) * 100, 1) if m else None
-                        img_src = img.get('src', '').strip() or None
+                        # Check multiple attributes for lazy-loaded images
+                        img_src = (img.get('data-src', '').strip() or
+                                   img.get('data-lazy-src', '').strip() or
+                                   img.get('src', '').strip() or None)
                         result[current_layer].append({'name': name, 'strength_pct': strength_pct, 'image_url': img_src})
             else:
                 # Flat list with no hierarchy — store everything as top notes
@@ -388,7 +392,10 @@ class FragranticaParser:
                         continue
                     m = re.search(r'width:\s*([\d.]+)rem', img.get('style', ''))
                     strength_pct = round((float(m.group(1)) / 5.0) * 100, 1) if m else None
-                    img_src = img.get('src', '').strip() or None
+                    # Check multiple attributes for lazy-loaded images
+                    img_src = (img.get('data-src', '').strip() or
+                               img.get('data-lazy-src', '').strip() or
+                               img.get('src', '').strip() or None)
                     result['top_notes_json'].append({'name': name, 'strength_pct': strength_pct, 'image_url': img_src})
         except Exception:
             pass
@@ -644,22 +651,28 @@ class FragranticaScraper:
                     "--no-sandbox",
                 ],
         )
-        
+
         self._context = self._browser.new_context(viewport=viewport_size)
+        return self._browser
 
     def _scrape_page(self, url: str, context) -> dict | None:
         """Scrape one URL using the given Playwright context (must be in the same thread)."""
+        _POST_LOAD_TIMEOUT = 10.0  # seconds budget for scroll + poll after page loads
+
         for attempt in range(self.max_retries):
             try:
                 page = context.new_page()
+                page.set_default_timeout(20000)  # cap every Playwright call at 20s
                 Stealth().apply_stealth_sync(page)
                 try:
-                    response = page.goto(url, wait_until='domcontentloaded', timeout=30000)
-                    if response and response.status == 429:
+                    response = page.goto(url, wait_until='domcontentloaded', timeout=10000)
+                    if response and response.status in (403, 429):
                         with self._print_lock:
-                            print(f"Rate limited on: {url}")
+                            print(f"HTTP {response.status} for {url}, backing off...")
                         page.close()
                         self._cycle_vpn()
+                        # Per-thread backoff: prevents all workers from retrying simultaneously
+                        time.sleep(random.uniform(4, 8))
                         continue
                     if response and response.status != 200:
                         with self._print_lock:
@@ -667,10 +680,32 @@ class FragranticaScraper:
                         page.close()
                         self._cycle_vpn()
                         continue
-                    # Scroll 500px at 10Hz until the demographics section (the deepest lazy
-                    # section we need) enters the viewport — this triggers its IntersectionObserver.
-                    # Stop after 8000px to avoid getting stuck on abnormally long pages.
+
+                    deadline = time.monotonic() + _POST_LOAD_TIMEOUT
+
+                    # Dismiss registration nudge modal if present
+                    page.evaluate("""
+                        () => {
+                            const modal = document.getElementById('registration-nudge-modal');
+                            if (modal) registrationNudgeDismiss();
+                        }
+                    """)
+
+                    # Scroll to note pyramid first to trigger lazy-loaded images
+                    page.evaluate("""
+                        () => {
+                            const pyramid = document.getElementById('pyramid');
+                            if (pyramid) {
+                                pyramid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }
+                    """)
+                    time.sleep(1)
+
+                    # Scroll until the demographics section enters the viewport.
                     for _ in range(40):
+                        if time.monotonic() >= deadline:
+                            break
                         page.evaluate("window.scrollBy(0, 1000)")
                         time.sleep(0.1)
                         reached = page.evaluate("""
@@ -684,7 +719,7 @@ class FragranticaScraper:
                         if reached:
                             break
 
-                    # Now poll for Vue API calls to finish loading the data
+                    # Poll for Vue API calls to finish loading the data
                     _SENTINELS = [
                         'top_notes_json',
                         'longevity_very_weak', 'sillage_intimate',
@@ -693,6 +728,10 @@ class FragranticaScraper:
                     ]
                     data = None
                     for poll in range(15):
+                        if time.monotonic() >= deadline:
+                            with self._print_lock:
+                                print(f"Timeout waiting for data on {url}, saving partial")
+                            break
                         time.sleep(1)
                         html = page.content()
                         soup = BeautifulSoup(html, 'html.parser')
@@ -713,8 +752,6 @@ class FragranticaScraper:
             except Exception as e:
                 with self._print_lock:
                     print(f"Error scraping {url} (attempt {attempt + 1}/{self.max_retries}): {e}")
-                if attempt < self.max_retries - 1:
-                    self._cycle_vpn()
         return None
 
     def scrape(self, url: str) -> dict | None:
@@ -732,9 +769,12 @@ class FragranticaScraper:
             self.launch_browser()
 
     def close(self):
-        self._context.close()
-        self._browser.close()
-        self._pw.stop()
+        if self._context:
+            self._context.close()
+        if self._browser:
+            self._browser.close()
+        if self._pw:
+            self._pw.stop()
 
     def __enter__(self):
         return self
@@ -745,10 +785,15 @@ class FragranticaScraper:
     def scrape_and_save(self, url: str) -> dict | None:
         data = self.scrape(url)
         if data and self.db:
-            # Collect notes with image_url BEFORE stripping from the JSON columns
+            # Collect notes with image_url BEFORE stripping (must copy, not reference)
             all_notes = []
             for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
-                all_notes.extend(data.get(layer) or [])
+                for note in (data.get(layer) or []):
+                    # Copy the name and image_url for the notes table
+                    all_notes.append({
+                        'name': note.get('name'),
+                        'image_url': note.get('image_url')
+                    })
 
             # Strip image_url from note dicts so it isn't serialized into JSON columns
             for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
@@ -804,9 +849,15 @@ class FragranticaScraper:
                     data = self._scrape_page(url, context)
 
                     if data and self.db:
+                        # Collect notes with image_url BEFORE stripping (must copy, not reference)
                         all_notes = []
                         for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
-                            all_notes.extend(data.get(layer) or [])
+                            for note in (data.get(layer) or []):
+                                all_notes.append({
+                                    'name': note.get('name'),
+                                    'image_url': note.get('image_url')
+                                })
+                        # Strip image_url from note dicts so it isn't serialized into JSON columns
                         for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
                             for note in (data.get(layer) or []):
                                 note.pop('image_url', None)

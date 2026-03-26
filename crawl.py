@@ -21,8 +21,8 @@ def normalize(href: str) -> str | None:
         return None
     return url
 
-_MAX_WORKERS = 6 
-_WINDOW = 100
+_MAX_WORKERS = 6
+_WINDOW = 3600 
 
 
 def main():
@@ -77,7 +77,11 @@ def main():
                         if data and db:
                             all_notes = []
                             for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
-                                all_notes.extend(data.get(layer) or [])
+                                for note in (data.get(layer) or []):
+                                    all_notes.append({
+                                        'name': note.get('name'),
+                                        'image_url': note.get('image_url'),
+                                    })
                             for layer in ('top_notes_json', 'middle_notes_json', 'base_notes_json'):
                                 for note in (data.get(layer) or []):
                                     note.pop('image_url', None)

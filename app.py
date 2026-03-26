@@ -24,15 +24,15 @@ VOTE_GROUPS = {
 VALID_COLS = {col for cols in VOTE_GROUPS.values() for col in cols}
 
 SORT_MAP = {
-    "bayesian":      "bayesian_score",
-    "rating":        "rating",
-    "votes":         "votes",
-    "liked":         "liked_score",
-    "loved":         "loved_score",
-    "friendly":      "friendly_score",
-    "controversial": "controversial_score",
-    "year":          "year",
-    "name":          "name",
+    "bayesian":        "bayesian_score",
+    "rating":          "rating",
+    "votes":           "votes",
+    "loved":           "most_loved_score",
+    "controversial":   "controversial_score",
+    "price_value":     "price_value_score",
+    "love_per_dollar": "love_per_dollar_score",
+    "year":            "year",
+    "name":            "name",
 }
 
 _GLOBALS: dict = {}
@@ -56,12 +56,81 @@ def _compute_globals() -> dict:
     else:
         m = (rows[0][0] + rows[1][0]) / 2 if len(rows) >= 2 else rows[0][0]
 
+    # Price value Bayesian params
+    price_rows = conn.execute("""
+        SELECT
+            (1.0*price_way_overpriced + 2*price_overpriced + 3*price_ok + 4*price_good_value + 5*price_great_value)
+            / (price_way_overpriced+price_overpriced+price_ok+price_good_value+price_great_value) AS raw_val,
+            (price_way_overpriced+price_overpriced+price_ok+price_good_value+price_great_value) AS price_total
+        FROM fragrances
+        WHERE (price_way_overpriced+price_overpriced+price_ok+price_good_value+price_great_value) > 0
+        ORDER BY price_total
+    """).fetchall()
+    C_price = sum(r[0] for r in price_rows) / len(price_rows) if price_rows else 3.0
+    pn = len(price_rows)
+    pmid = (pn - 1) // 2
+    if pn % 2 == 1:
+        m_price = price_rows[pmid][1]
+    else:
+        m_price = (price_rows[pmid][1] + price_rows[pmid + 1][1]) / 2 if pn >= 2 else price_rows[0][1]
+
+    # Note usage stats
+    note_rows = conn.execute("""
+        WITH all_notes AS (
+            SELECT json_extract(value,'$.name') AS name, 'top' AS layer
+            FROM fragrances, json_each(top_notes_json) WHERE top_notes_json IS NOT NULL
+            UNION ALL
+            SELECT json_extract(value,'$.name'), 'mid'
+            FROM fragrances, json_each(middle_notes_json) WHERE middle_notes_json IS NOT NULL
+            UNION ALL
+            SELECT json_extract(value,'$.name'), 'base'
+            FROM fragrances, json_each(base_notes_json) WHERE base_notes_json IS NOT NULL
+        )
+        SELECT name,
+            COUNT(*) AS total,
+            SUM(CASE WHEN layer='top'  THEN 1 ELSE 0 END) AS top_count,
+            SUM(CASE WHEN layer='mid'  THEN 1 ELSE 0 END) AS mid_count,
+            SUM(CASE WHEN layer='base' THEN 1 ELSE 0 END) AS base_count
+        FROM all_notes WHERE name IS NOT NULL
+        GROUP BY name ORDER BY total DESC
+    """).fetchall()
+    note_images = {r[0]: r[1] for r in conn.execute(
+        "SELECT name, image_url FROM notes WHERE image_url IS NOT NULL"
+    ).fetchall()}
+    note_stats = [
+        {"name": r[0], "total": r[1], "top": r[2], "mid": r[3], "base": r[4],
+         "image_url": note_images.get(r[0])}
+        for r in note_rows
+    ]
+
+    # Accord usage stats
+    accord_rows = conn.execute("""
+        SELECT acc_name, COUNT(*) AS count, AVG(acc_strength) AS avg_strength
+        FROM (
+            SELECT json_extract(value,'$.name')         AS acc_name,
+                   json_extract(value,'$.strength_pct') AS acc_strength
+            FROM fragrances, json_each(accords_json)
+            WHERE accords_json IS NOT NULL
+        )
+        WHERE acc_name IS NOT NULL
+        GROUP BY acc_name ORDER BY count DESC
+    """).fetchall()
+    accord_stats = [
+        {"name": r[0], "count": r[1],
+         "avg_strength": round(r[2], 1) if r[2] is not None else None}
+        for r in accord_rows
+    ]
+
     total = conn.execute("SELECT COUNT(*) FROM fragrances").fetchone()[0]
     brands = [r[0] for r in conn.execute(
         "SELECT DISTINCT brand FROM fragrances WHERE brand IS NOT NULL ORDER BY brand"
     ).fetchall()]
     conn.close()
-    return {"mean_rating": round(C, 4), "median_votes": m, "total_count": total, "brand_list": brands}
+    return {
+        "mean_rating": round(C, 4), "median_votes": m, "total_count": total, "brand_list": brands,
+        "mean_price_value": round(C_price, 4), "median_price_votes": m_price,
+        "note_stats": note_stats, "accord_stats": accord_stats,
+    }
 
 
 def get_db():
@@ -152,21 +221,18 @@ def _build_condition_sql(cond: dict) -> tuple[str, list] | None:
 def build_query(args: dict):
     C = _GLOBALS["mean_rating"]
     m = _GLOBALS["median_votes"]
+    C_price = _GLOBALS["mean_price_value"]
+    m_price = _GLOBALS["median_price_votes"]
 
     # Sentiment score expressions
     total_sent = "(COALESCE(rating_love,0)+COALESCE(rating_like,0)+COALESCE(rating_ok,0)+COALESCE(rating_dislike,0)+COALESCE(rating_hate,0))"
-    # Liked: pos = P(liked)*(2*love+like), neg = P(disliked)*(dislike+2*hate), score=(pos-neg)/total
-    liked_expr = (
-        f"("
-        f"  CAST(COALESCE(rating_love,0)+COALESCE(rating_like,0) AS REAL) / NULLIF({total_sent},0)"
-        f"  * (2.0*COALESCE(rating_love,0)+COALESCE(rating_like,0))"
-        f"  - CAST(COALESCE(rating_dislike,0)+COALESCE(rating_hate,0) AS REAL) / NULLIF({total_sent},0)"
-        f"  * (COALESCE(rating_dislike,0)+2.0*COALESCE(rating_hate,0))"
-        f") / NULLIF({total_sent},0)"
+    # Most Loved: Bayesian net sentiment — love>like, hate worse than dislike, smoothed by m phantom votes
+    most_loved_expr = (
+        f"(2.0*COALESCE(rating_love,0) + COALESCE(rating_like,0)"
+        f" - COALESCE(rating_dislike,0) - 2.0*COALESCE(rating_hate,0))"
+        f" / NULLIF({total_sent} + {m}, 0)"
     )
-    # Loved: pure love percentage
-    loved_expr = f"CAST(COALESCE(rating_love,0) AS REAL) / NULLIF({total_sent},0)"
-    # Friendly: Bayesian-smoothed positive rate — more votes with same rate scores higher
+    # Friendly: kept for love_per_dollar denominator (positive rate, Bayesian-smoothed)
     friendly_expr = f"CAST(COALESCE(rating_love,0)+COALESCE(rating_like,0) AS REAL) / NULLIF({total_sent}+{m},0)"
     # Controversial: 2 * min(P(liked), P(disliked)) — peaks at 1.0 when 50/50 split
     controversial_expr = (
@@ -176,13 +242,18 @@ def build_query(args: dict):
         f")"
     )
 
+    _pt = "(COALESCE(price_way_overpriced,0)+COALESCE(price_overpriced,0)+COALESCE(price_ok,0)+COALESCE(price_good_value,0)+COALESCE(price_great_value,0))"
+    _praw = f"(1.0*COALESCE(price_way_overpriced,0)+2*COALESCE(price_overpriced,0)+3*COALESCE(price_ok,0)+4*COALESCE(price_good_value,0)+5*COALESCE(price_great_value,0)) / NULLIF({_pt},0)"
+    price_value_expr = f"({C_price} * {m_price} + ({_praw}) * {_pt}) / ({m_price} + {_pt})"
+    love_per_dollar_expr = f"({friendly_expr}) / NULLIF(6.0 - ({price_value_expr}), 0)"
+
     select = f"""
         SELECT
             id, name, brand, year, url, rating, votes, image_url,
             ({C} * {m} + COALESCE(rating,0) * COALESCE(votes,0)) / ({m} + COALESCE(votes,0)) AS bayesian_score,
-            {liked_expr} AS liked_score,
-            {loved_expr} AS loved_score,
-            {friendly_expr} AS friendly_score,
+            {price_value_expr} AS price_value_score,
+            {love_per_dollar_expr} AS love_per_dollar_score,
+            {most_loved_expr} AS most_loved_score,
             {controversial_expr} AS controversial_score,
             longevity_very_weak, longevity_weak, longevity_moderate, longevity_long_lasting, longevity_eternal,
             sillage_intimate, sillage_moderate, sillage_strong, sillage_enormous,
@@ -231,8 +302,20 @@ def build_query(args: dict):
     except (ValueError, TypeError):
         pass
 
-    _season_param = args.get("season", "").strip()
+    _gender_param = args.get("gender", "").strip()
     _s = lambda c: f"COALESCE({c},0)"
+    if _gender_param == "male_wearable":
+        wheres.append(
+            f"{_s('gender_unisex')}+{_s('gender_more_male')}+{_s('gender_male')}"
+            f" > {_s('gender_female')}+{_s('gender_more_female')}"
+        )
+    elif _gender_param == "female_wearable":
+        wheres.append(
+            f"{_s('gender_female')}+{_s('gender_more_female')}+{_s('gender_unisex')}"
+            f" > {_s('gender_male')}+{_s('gender_more_male')}"
+        )
+
+    _season_param = args.get("season", "").strip()
     _season_total = f"NULLIF({_s('season_spring')}+{_s('season_summer')}+{_s('season_fall')}+{_s('season_winter')},0)"
     _time_total   = f"NULLIF({_s('time_day')}+{_s('time_night')},0)"
     if _season_param == "hot":
@@ -254,6 +337,8 @@ def build_query(args: dict):
         if not selected:
             continue
         if group_name == "season" and _season_param in ("hot", "cold", "universal"):
+            continue
+        if group_name == "gender" and _gender_param in ("male_wearable", "female_wearable"):
             continue
         full_col = f"{group_name}_{selected}"
         if full_col not in VALID_COLS:
@@ -297,6 +382,14 @@ def build_query(args: dict):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/ingredient-stats")
+def ingredient_stats():
+    return jsonify({
+        "notes": _GLOBALS.get("note_stats", []),
+        "accords": _GLOBALS.get("accord_stats", []),
+    })
 
 
 @app.route("/api/notes")

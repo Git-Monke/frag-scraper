@@ -56,6 +56,86 @@ header h1 {
   color: var(--text-dim);
   margin-left: auto;
 }
+.tab-btn {
+  padding: 0 14px;
+  height: 100%;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+.tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+
+/* ---- Ingredients page ---- */
+#ingredients-page {
+  grid-row: 2;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ingr-toolbar {
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ingr-toolbar input {
+  width: 320px;
+  padding: 5px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+}
+.ingr-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  flex: 1;
+}
+.ingr-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+.ingr-panel:last-child { border-right: none; }
+.ingr-panel-head {
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amber);
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.ingr-panel-head span { color: var(--text-muted); font-weight: 400; }
+.ingr-list { overflow-y: auto; flex: 1; }
+.ingr-row {
+  display: grid;
+  grid-template-columns: 38px 28px 1fr 90px 54px 110px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.ingr-row.accord { grid-template-columns: 38px 1fr 90px 54px 60px; }
+.ingr-row:hover { background: var(--bg2); }
+.ingr-rank { color: var(--text-muted); text-align: right; font-size: 11px; }
+.ingr-img { width: 24px; height: 24px; border-radius: 3px; object-fit: cover; background: var(--bg3); }
+.ingr-img-ph { width: 24px; height: 24px; }
+.ingr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ingr-bar-wrap { background: var(--bg3); border-radius: 2px; height: 5px; }
+.ingr-bar { height: 5px; border-radius: 2px; background: var(--amber-dim); }
+.ingr-count { color: var(--text-dim); text-align: right; }
+.ingr-layers { color: var(--text-muted); font-size: 10px; }
 
 /* ---- Main layout ---- */
 main {
@@ -161,16 +241,62 @@ hr.divider {
 .condition-top button:hover { color: var(--love); }
 .condition-bottom {
   display: flex;
-  gap: 4px;
-  align-items: center;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 0;
 }
-.condition-bottom label {
+.dual-range-wrap {
+  position: relative;
+  height: 18px;
+  width: 100%;
+}
+.range-track {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  pointer-events: none;
+  background: var(--bg3);
+}
+.dual-range-wrap input[type="range"] {
+  position: absolute;
+  width: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  margin: 0;
+}
+.dual-range-wrap input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--amber);
+  cursor: pointer;
+  pointer-events: all;
+  border: 2px solid var(--bg3);
+}
+.dual-range-wrap input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--amber);
+  cursor: pointer;
+  pointer-events: all;
+  border: 2px solid var(--bg3);
+}
+.range-labels {
+  display: flex;
+  justify-content: space-between;
   font-size: 10px;
   color: var(--text-muted);
-  white-space: nowrap;
-}
-.condition-bottom input {
-  width: 52px;
+  padding: 0 1px;
 }
 
 #btn-add-condition {
@@ -541,6 +667,8 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
 
 <header>
   <h1>Fragrantica Explorer</h1>
+  <button class="tab-btn active" data-tab="browse">Browse</button>
+  <button class="tab-btn" data-tab="ingredients">Notes &amp; Accords</button>
   <span id="stats-bar">Loading...</span>
 </header>
 
@@ -625,7 +753,9 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
         <option value="">Any</option>
         <option value="female">Feminine</option>
         <option value="more_female">More Feminine</option>
+        <option value="female_wearable">Female Wearable</option>
         <option value="unisex">Unisex</option>
+        <option value="male_wearable">Male Wearable</option>
         <option value="more_male">More Masculine</option>
         <option value="male">Masculine</option>
       </select>
@@ -653,10 +783,10 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
           <option value="bayesian">Bayesian Score</option>
           <option value="rating">Highest Rated</option>
           <option value="votes">Most Popular</option>
-          <option value="liked">Most Liked</option>
           <option value="loved">Most Loved</option>
-          <option value="friendly">Most Friendly</option>
           <option value="controversial">Controversial</option>
+          <option value="price_value">Best Value</option>
+          <option value="love_per_dollar">Love per Dollar</option>
           <option value="year">Year</option>
           <option value="name">Name</option>
         </select>
@@ -727,6 +857,22 @@ hr.detail-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0
     <div id="detail-content"></div>
   </div>
 </main>
+
+<div id="ingredients-page">
+  <div class="ingr-toolbar">
+    <input id="ingr-search" type="text" placeholder="Filter notes &amp; accords...">
+  </div>
+  <div class="ingr-panels">
+    <div class="ingr-panel">
+      <div class="ingr-panel-head">Notes <span id="notes-count-label"></span></div>
+      <div id="notes-list" class="ingr-list"></div>
+    </div>
+    <div class="ingr-panel">
+      <div class="ingr-panel-head">Accords <span id="accords-count-label"></span></div>
+      <div id="accords-list" class="ingr-list"></div>
+    </div>
+  </div>
+</div>
 
 <div id="loading"></div>
 
@@ -812,6 +958,8 @@ function buildConditionRow(cond = {}) {
   const row = document.createElement('div');
   row.className = 'condition-row';
   row.dataset.id = id;
+  const initMin = cond.min_pct ?? 0;
+  const initMax = cond.max_pct ?? 100;
   row.innerHTML = `
     <div class="condition-top">
       <select class="c-type">
@@ -825,18 +973,49 @@ function buildConditionRow(cond = {}) {
       <button class="c-remove" title="Remove">×</button>
     </div>
     <div class="condition-bottom">
-      <label>Min%</label>
-      <input type="number" class="c-min" placeholder="0" min="0" max="100" value="${cond.min_pct ?? ''}">
-      <label>Max%</label>
-      <input type="number" class="c-max" placeholder="100" min="0" max="100" value="${cond.max_pct ?? ''}">
+      <div class="dual-range-wrap">
+        <div class="range-track"></div>
+        <input type="range" class="c-range-min" min="0" max="100" step="1" value="${initMin}">
+        <input type="range" class="c-range-max" min="0" max="100" step="1" value="${initMax}">
+        <input type="hidden" class="c-min" value="${initMin > 0 ? initMin : ''}">
+        <input type="hidden" class="c-max" value="${initMax < 100 ? initMax : ''}">
+      </div>
+      <div class="range-labels">
+        <span class="range-val-min"></span>
+        <span class="range-val-max"></span>
+      </div>
     </div>`;
   if (cond.type) row.querySelector('.c-type').value = cond.type;
 
-  row.querySelector('.c-remove').addEventListener('click', () => {
-    row.remove();
-    triggerSearch();
-  });
-  row.querySelectorAll('select, input').forEach(el => {
+  const minSlider = row.querySelector('.c-range-min');
+  const maxSlider = row.querySelector('.c-range-max');
+  const minHidden = row.querySelector('.c-min');
+  const maxHidden = row.querySelector('.c-max');
+  const minLabel  = row.querySelector('.range-val-min');
+  const maxLabel  = row.querySelector('.range-val-max');
+  const track     = row.querySelector('.range-track');
+
+  function updateRange() {
+    let lo = parseInt(minSlider.value);
+    let hi = parseInt(maxSlider.value);
+    if (lo > hi) { lo = hi; minSlider.value = lo; }
+    // z-index: whichever thumb is at its extreme gets pushed behind
+    minSlider.style.zIndex = lo === 100 ? 2 : 3;
+    maxSlider.style.zIndex = lo === 100 ? 3 : 2;
+    track.style.background =
+      `linear-gradient(to right, var(--bg3) ${lo}%, var(--amber-dim) ${lo}%, var(--amber-dim) ${hi}%, var(--bg3) ${hi}%)`;
+    minHidden.value = lo > 0   ? lo  : '';
+    maxHidden.value = hi < 100 ? hi  : '';
+    minLabel.textContent = lo > 0   ? lo + '%'  : 'Any';
+    maxLabel.textContent = hi < 100 ? hi + '%'  : '100%';
+  }
+  updateRange();
+
+  minSlider.addEventListener('input', () => { updateRange(); debounce(triggerSearch); });
+  maxSlider.addEventListener('input', () => { updateRange(); debounce(triggerSearch); });
+
+  row.querySelector('.c-remove').addEventListener('click', () => { row.remove(); triggerSearch(); });
+  row.querySelectorAll('select, input[type="text"]').forEach(el => {
     el.addEventListener('change', triggerSearch);
     el.addEventListener('input', () => debounce(triggerSearch));
   });
@@ -1334,6 +1513,89 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   document.getElementById('f-order').value = 'desc';
   document.getElementById('conditions-list').innerHTML = '';
   triggerSearch();
+});
+
+// ---- Ingredients tab ----
+let ingredientData = null;
+
+function renderIngredients(filter) {
+  const q = (filter || '').toLowerCase();
+  const notes = ingredientData.notes.filter(n => !q || n.name.toLowerCase().includes(q));
+  const accords = ingredientData.accords.filter(a => !q || a.name.toLowerCase().includes(q));
+  const maxNote = ingredientData.notes[0]?.total || 1;
+  const maxAccord = ingredientData.accords[0]?.count || 1;
+
+  document.getElementById('notes-count-label').textContent = `(${notes.length.toLocaleString()})`;
+  document.getElementById('accords-count-label').textContent = `(${accords.length.toLocaleString()})`;
+
+  const notesList = document.getElementById('notes-list');
+  notesList.innerHTML = notes.map((n, i) => `
+    <div class="ingr-row" data-type="any_note" data-name="${n.name.replace(/"/g,'&quot;')}" style="cursor:pointer">
+      <span class="ingr-rank">${i + 1}</span>
+      ${n.image_url ? `<img class="ingr-img" src="${n.image_url}" loading="lazy">` : `<span class="ingr-img-ph"></span>`}
+      <span class="ingr-name" title="${n.name}">${n.name}</span>
+      <div class="ingr-bar-wrap"><div class="ingr-bar" style="width:${(n.total/maxNote*100).toFixed(1)}%"></div></div>
+      <span class="ingr-count">${n.total.toLocaleString()}</span>
+      <span class="ingr-layers">T:${n.top.toLocaleString()} M:${n.mid.toLocaleString()} B:${n.base.toLocaleString()}</span>
+    </div>`).join('');
+
+  const accordsList = document.getElementById('accords-list');
+  accordsList.innerHTML = accords.map((a, i) => `
+    <div class="ingr-row accord" data-type="accord" data-name="${a.name.replace(/"/g,'&quot;')}" style="cursor:pointer">
+      <span class="ingr-rank">${i + 1}</span>
+      <span class="ingr-name" title="${a.name}">${a.name}</span>
+      <div class="ingr-bar-wrap"><div class="ingr-bar" style="width:${(a.count/maxAccord*100).toFixed(1)}%"></div></div>
+      <span class="ingr-count">${a.count.toLocaleString()}</span>
+      <span class="ingr-layers">${a.avg_strength != null ? a.avg_strength + '%' : '—'}</span>
+    </div>`).join('');
+
+  [notesList, accordsList].forEach(list => {
+    list.querySelectorAll('.ingr-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const type = row.dataset.type;
+        const name = row.dataset.name;
+        // Switch to browse tab
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('.tab-btn[data-tab="browse"]').classList.add('active');
+        document.querySelector('main').style.display = 'grid';
+        document.getElementById('ingredients-page').style.display = 'none';
+        // Set condition
+        document.getElementById('conditions-list').innerHTML = '';
+        document.getElementById('conditions-list').appendChild(buildConditionRow({ type, name }));
+        // Set sort
+        state.sort = 'loved';
+        state.order = 'desc';
+        document.getElementById('f-sort').value = 'loved';
+        document.getElementById('f-order').value = 'desc';
+        triggerSearch();
+      });
+    });
+  });
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    const mainEl = document.querySelector('main');
+    const ingrEl = document.getElementById('ingredients-page');
+    if (tab === 'browse') {
+      mainEl.style.display = 'grid';
+      ingrEl.style.display = 'none';
+    } else {
+      mainEl.style.display = 'none';
+      ingrEl.style.display = 'flex';
+      if (!ingredientData) {
+        ingredientData = await fetch('/api/ingredient-stats').then(r => r.json());
+      }
+      renderIngredients(document.getElementById('ingr-search').value);
+    }
+  });
+});
+
+document.getElementById('ingr-search').addEventListener('input', e => {
+  if (ingredientData) renderIngredients(e.target.value);
 });
 
 // ---- Init ----
