@@ -23,6 +23,18 @@ VOTE_GROUPS = {
 }
 VALID_COLS = {col for cols in VOTE_GROUPS.values() for col in cols}
 
+LONGEVITY_ORDER = ["longevity_very_weak","longevity_weak","longevity_moderate","longevity_long_lasting","longevity_eternal"]
+SILLAGE_ORDER   = ["sillage_intimate","sillage_moderate","sillage_strong","sillage_enormous"]
+
+def _min_threshold_sql(full_col, ordered):
+    s = lambda c: f"COALESCE({c},0)"
+    idx = ordered.index(full_col)
+    above = [s(c) for c in ordered[idx:]]
+    below = [s(c) for c in ordered[:idx]]
+    if not below:
+        return None  # already the minimum category — no constraint needed
+    return f"{'+'.join(above)} > {'+'.join(below)}"
+
 SORT_MAP = {
     "bayesian":        "bayesian_score",
     "rating":          "rating",
@@ -150,6 +162,23 @@ def close_db(exc):
 def _build_condition_sql(cond: dict) -> tuple[str, list] | None:
     """Return (sql_fragment, params) for one note/accord condition, or None if invalid."""
     ctype = cond.get("type", "")
+
+    if ctype == "at_least":
+        names = [n.strip() for n in cond.get("names", []) if n.strip()]
+        count = max(1, int(cond.get("count", 1)))
+        if not names:
+            return None
+        all_cols = ["top_notes_json", "middle_notes_json", "base_notes_json", "accords_json"]
+        terms, p = [], []
+        for name in names:
+            pattern = f"%{name.lower()}%"
+            sub = []
+            for col in all_cols:
+                sub.append(f"EXISTS (SELECT 1 FROM json_each({col}) WHERE {col} IS NOT NULL AND lower(json_extract(value,'$.name')) LIKE ?)")
+                p.append(pattern)
+            terms.append(f"({' OR '.join(sub)})")
+        return f"({' + '.join(terms)}) >= {count}", p
+
     name = cond.get("name", "").strip()
     if not name:
         return None
@@ -332,6 +361,9 @@ def build_query(args: dict):
             f" AND CAST({_s('time_night')} AS REAL)/{_time_total} >= 0.40"
         )
 
+    _longevity_min = args.get("longevity_min", "").strip() == "1"
+    _sillage_min   = args.get("sillage_min",   "").strip() == "1"
+
     for group_name, cols in VOTE_GROUPS.items():
         selected = args.get(group_name, "").strip()
         if not selected:
@@ -342,6 +374,16 @@ def build_query(args: dict):
             continue
         full_col = f"{group_name}_{selected}"
         if full_col not in VALID_COLS:
+            continue
+        if group_name == "longevity" and _longevity_min:
+            sql = _min_threshold_sql(full_col, LONGEVITY_ORDER)
+            if sql:
+                wheres.append(sql)
+            continue
+        if group_name == "sillage" and _sillage_min:
+            sql = _min_threshold_sql(full_col, SILLAGE_ORDER)
+            if sql:
+                wheres.append(sql)
             continue
         coalesced = [f"COALESCE({c},0)" for c in cols]
         wheres.append(f"COALESCE({full_col},0) = MAX({', '.join(coalesced)}) AND {full_col} > 0")
